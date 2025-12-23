@@ -101,15 +101,17 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
       Enigo, Key, Keyboard, Settings,
     };
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("enigo init failed: {e}"))?;
-    // If the hotkey includes Alt, some apps (including Chrome) may momentarily focus the menu bar.
-    // Press Esc once to return focus to the page before copying the selection.
-    let _ = enigo.key(Key::Escape, Click);
-    std::thread::sleep(std::time::Duration::from_millis(30));
-    enigo.key(Key::Control, Press).map_err(|e| format!("enigo key failed: {e}"))?;
-    enigo
-      .key(Key::Unicode('c'), Click)
-      .map_err(|e| format!("enigo key failed: {e}"))?;
-    enigo.key(Key::Control, Release).map_err(|e| format!("enigo key failed: {e}"))?;
+    // Best-effort: release other modifiers first so they don't interfere (especially Alt).
+    let _ = enigo.key(Key::Alt, Release);
+    let _ = enigo.key(Key::Shift, Release);
+    let _ = enigo.key(Key::Meta, Release);
+    // Attempt #1: Ctrl+C (no Esc; Esc can clear selection on some pages)
+    let _ = enigo.key(Key::Control, Press);
+    let _ = enigo.key(Key::Unicode('c'), Click);
+    let _ = enigo.key(Key::Control, Release);
+    // #region agent log
+    agent_log("H9", "copy attempt 1 sent (Ctrl+C)", serde_json::json!({}));
+    // #endregion
   }
   #[cfg(target_os = "macos")]
   {
@@ -161,6 +163,7 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
   let mut picked: Option<String> = None;
   let mut polls: u32 = 0;
   let mut last_kind: &'static str = "none";
+  let mut tried_alt_copy: bool = false;
   while started.elapsed().as_millis() < timeout_ms as u128 {
     std::thread::sleep(std::time::Duration::from_millis(90));
     let cur = clipboard.get_text().ok();
@@ -183,6 +186,38 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
         "other"
       };
       if cur_t.is_empty() || cur_t == sentinel || cur_t.contains("__ERUDAITE_SENTINEL__") {
+        // If still sentinel after a few polls, try an alternate copy sequence.
+        // This stays within the same capture window and avoids relying on extra delays.
+        if !tried_alt_copy && polls >= 3 {
+          tried_alt_copy = true;
+          #[cfg(target_os = "windows")]
+          {
+            use enigo::{
+              Direction::{Click, Press, Release},
+              Enigo, Key, Keyboard, Settings,
+            };
+            if let Ok(mut enigo) = Enigo::new(&Settings::default()) {
+              // Attempt #2: Ctrl+Insert (common alternate copy)
+              let _ = enigo.key(Key::Alt, Release);
+              let _ = enigo.key(Key::Shift, Release);
+              let _ = enigo.key(Key::Control, Press);
+              let _ = enigo.key(Key::Insert, Click);
+              let _ = enigo.key(Key::Control, Release);
+              // Attempt #3: Esc then Ctrl+C (in case Alt focused menus)
+              let _ = enigo.key(Key::Escape, Click);
+              let _ = enigo.key(Key::Control, Press);
+              let _ = enigo.key(Key::Unicode('c'), Click);
+              let _ = enigo.key(Key::Control, Release);
+              // #region agent log
+              agent_log("H9", "copy attempt 2/3 sent (Ctrl+Insert, Esc+Ctrl+C)", serde_json::json!({ "pollsAt": polls }));
+              // #endregion
+            } else {
+              // #region agent log
+              agent_log("H9", "alt copy attempts skipped (enigo init failed)", serde_json::json!({ "pollsAt": polls }));
+              // #endregion
+            }
+          }
+        }
         continue;
       }
       // If clipboard reverted to previous content without a successful copy, treat as failure.
