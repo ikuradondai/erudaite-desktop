@@ -1,5 +1,27 @@
 use serde::Serialize;
 use tauri::ipc::Channel;
+use std::io::Write;
+
+// #region agent log
+fn agent_log(hypothesis_id: &str, message: &str, data: serde_json::Value) {
+  let path = r"c:\Users\kuran\OneDrive\Desktop\App_dev\.cursor\debug.log";
+  if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+    let v = serde_json::json!({
+      "sessionId": "debug-session",
+      "runId": "pre-fix",
+      "hypothesisId": hypothesis_id,
+      "location": "desktop/src-tauri/src/commands.rs",
+      "message": message,
+      "data": data,
+      "timestamp": std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+    });
+    let _ = writeln!(f, "{}", v.to_string());
+  }
+}
+// #endregion
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "type")]
@@ -32,6 +54,12 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
 
   let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("clipboard init failed: {e}"))?;
   let prev_text = clipboard.get_text().ok();
+  // #region agent log
+  agent_log("H4", "capture_selected_text entry", serde_json::json!({
+    "timeoutMs": timeout_ms,
+    "prevLen": prev_text.as_ref().map(|s| s.trim().len()).unwrap_or(0)
+  }));
+  // #endregion
 
   // Give the user time to release the hotkey modifiers (e.g. Alt) so that Ctrl+C isn't affected.
   std::thread::sleep(std::time::Duration::from_millis(180));
@@ -46,17 +74,24 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
   );
   let _ = clipboard.set_text(sentinel.clone());
   // Wait until the sentinel is actually observable (Windows clipboard can lag).
+  let mut sentinel_observed = false;
   {
     let started = std::time::Instant::now();
     while started.elapsed().as_millis() < 300 {
       if let Ok(cur) = clipboard.get_text() {
         if cur.trim() == sentinel {
+          sentinel_observed = true;
           break;
         }
       }
       std::thread::sleep(std::time::Duration::from_millis(20));
     }
   }
+  // #region agent log
+  agent_log("H5", "sentinel set", serde_json::json!({
+    "sentinelObserved": sentinel_observed
+  }));
+  // #endregion
 
   // simulate copy
   #[cfg(target_os = "windows")]
@@ -98,10 +133,12 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
   // poll clipboard for updated selection
   let started = std::time::Instant::now();
   let mut picked: Option<String> = None;
+  let mut polls: u32 = 0;
   while started.elapsed().as_millis() < timeout_ms as u128 {
     std::thread::sleep(std::time::Duration::from_millis(90));
     let cur = clipboard.get_text().ok();
     if let Some(cur_s) = cur {
+      polls += 1;
       let cur_t = cur_s.trim().to_string();
       if cur_t.is_empty() || cur_t == sentinel || cur_t.contains("__ERUDAITE_SENTINEL__") {
         continue;
@@ -121,6 +158,13 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
   if let Some(prev) = prev_text {
     let _ = clipboard.set_text(prev);
   }
+
+  // #region agent log
+  agent_log("H6", "capture_selected_text exit", serde_json::json!({
+    "polls": polls,
+    "pickedLen": picked.as_ref().map(|s| s.len()).unwrap_or(0)
+  }));
+  // #endregion
 
   Ok(picked.unwrap_or_default())
 }

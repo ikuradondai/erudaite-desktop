@@ -43,6 +43,24 @@ const DEFAULT_SETTINGS: Settings = {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const FALLBACK_HOTKEY = "CommandOrControl+Shift+Alt+Q";
 
+// #region agent log
+function agentLog(hypothesisId: string, message: string, data: Record<string, unknown>) {
+  fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionId: "debug-session",
+      runId: "pre-fix",
+      hypothesisId,
+      location: "desktop/src/App.tsx",
+      message,
+      data,
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 function App() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [status, setStatus] = useState<string>("");
@@ -96,12 +114,30 @@ function App() {
     try {
       // OS全体の選択取得（擬似Ctrl/Cmd+C→復元）をRust側で実施
       let picked = "";
+      // #region agent log
+      agentLog("H1", "hotkey handler start", {
+        hotkey: settings.hotkey,
+        apiBaseUrl: settings.apiBaseUrl,
+        routingStrategy: settings.routingStrategy,
+        clipboardMode: settings.clipboardMode,
+      });
+      // #endregion
       try {
         // NOTE: Rust側の引数名はsnake_caseなので、timeout_msで渡す
-        picked = String(await invoke("capture_selected_text", { timeout_ms: 1600 })).trim();
+        const args = { timeout_ms: 1600 };
+        // #region agent log
+        agentLog("H2", "invoke capture_selected_text", { argsKeys: Object.keys(args) });
+        // #endregion
+        picked = String(await invoke("capture_selected_text", args)).trim();
+        // #region agent log
+        agentLog("H3", "capture_selected_text returned", { pickedLen: picked.length });
+        // #endregion
       } catch (e) {
         // Do NOT fallback to clipboard here; it can silently translate stale clipboard content.
         // Instead, surface an actionable error to the user.
+        // #region agent log
+        agentLog("H2", "capture_selected_text threw", { err: e instanceof Error ? e.message : String(e) });
+        // #endregion
         try {
           const w = getCurrentWebviewWindow();
           await w.show();
@@ -116,6 +152,9 @@ function App() {
       }
       if (!picked) {
         // Bring the window forward so the user sees the failure reason.
+        // #region agent log
+        agentLog("H3", "picked is empty", {});
+        // #endregion
         try {
           const w = getCurrentWebviewWindow();
           await w.show();
@@ -152,6 +191,9 @@ function App() {
         // ignore; keep Unknown
       }
       setDetectedLang(detected);
+      // #region agent log
+      agentLog("H1", "detected language", { detected });
+      // #endregion
 
       let target = settings.defaultLanguage;
       if (settings.routingStrategy === "alwaysFixed") {
