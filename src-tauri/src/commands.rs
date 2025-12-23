@@ -33,6 +33,9 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
   let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("clipboard init failed: {e}"))?;
   let prev_text = clipboard.get_text().ok();
 
+  // Give the user time to release the hotkey modifiers (e.g. Alt) so that Ctrl+C isn't affected.
+  std::thread::sleep(std::time::Duration::from_millis(140));
+
   // simulate copy
   #[cfg(target_os = "windows")]
   {

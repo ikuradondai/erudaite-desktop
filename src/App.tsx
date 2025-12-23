@@ -90,15 +90,6 @@ function App() {
   }, [settings, storePromise]);
 
   const handleHotkey = useCallback(async () => {
-    // Ensure the window is visible when triggered globally
-    try {
-      const w = getCurrentWebviewWindow();
-      await w.show();
-      await w.setFocus();
-    } catch {
-      // ignore
-    }
-
     setStatus("Capturing selected text…");
     setTranslatedText("");
     try {
@@ -111,9 +102,27 @@ function App() {
         picked = String((await readText()) ?? "").trim();
       }
       if (!picked) {
+        // Bring the window forward so the user sees the failure reason.
+        try {
+          const w = getCurrentWebviewWindow();
+          await w.show();
+          await w.setFocus();
+        } catch {
+          // ignore
+        }
         setStatus("No selected text detected. Select text and press the hotkey again.");
         return;
       }
+
+      // Now bring the window forward (after capture), so we don't steal focus from the selection source.
+      try {
+        const w = getCurrentWebviewWindow();
+        await w.show();
+        await w.setFocus();
+      } catch {
+        // ignore
+      }
+
       setSourceText(picked);
       setStatus("Translating…");
 
