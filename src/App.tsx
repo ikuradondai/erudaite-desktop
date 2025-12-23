@@ -77,6 +77,11 @@ function App() {
   const hotkeyInFlightRef = useRef(false);
   const lastHotkeyAtRef = useRef(0);
   const popupRef = useRef<WebviewWindow | null>(null);
+  const lastPopupStateRef = useRef<{ status?: string; source?: string; translation?: string }>({
+    status: "Translating…",
+    source: "",
+    translation: "",
+  });
   const storePromise = useMemo(
     () =>
       load("settings.json", {
@@ -113,6 +118,32 @@ function App() {
       // ignore
     });
   }, [settings, storePromise]);
+
+  const emitPopupState = useCallback(
+    (partial: { status?: string; source?: string; translation?: string }) => {
+      lastPopupStateRef.current = { ...lastPopupStateRef.current, ...partial };
+      const payload = lastPopupStateRef.current;
+      // #region agent log
+      agentLog("H12", "emitTo popup state", {
+        status: payload.status ?? null,
+        sourceLen: (payload.source ?? "").length,
+        translationLen: (payload.translation ?? "").length,
+      });
+      // #endregion
+      void emitTo("popup", "erudaite://popup/state", payload)
+        .then(() => {
+          // #region agent log
+          agentLog("H12", "emitTo popup ok", {});
+          // #endregion
+        })
+        .catch((e) => {
+          // #region agent log
+          agentLog("H12", "emitTo popup failed", { err: e instanceof Error ? e.message : String(e) });
+          // #endregion
+        });
+    },
+    [],
+  );
 
   const closePopupIfOpen = useCallback(async () => {
     const w = popupRef.current ?? (await WebviewWindow.getByLabel("popup"));
@@ -199,6 +230,7 @@ function App() {
       // #endregion
       void popup.show().catch(() => {});
       void popup.setFocus().catch(() => {});
+      emitPopupState({}); // flush latest state after creation
     });
     popup.once("tauri://error", (e) => {
       // #region agent log
@@ -210,11 +242,11 @@ function App() {
       popupRef.current = null;
     });
 
-    // Ensure content starts in "Translating…" state
-    void emitTo("popup", "erudaite://popup/state", { status: "Translating…", source: "", translation: "" }).catch(() => {});
+    // Ensure content starts in "Translating…" state (best effort; may be re-sent on created/ready)
+    emitPopupState({ status: "Translating…", source: "", translation: "" });
 
     return popup;
-  }, []);
+  }, [emitPopupState]);
 
   const handleHotkey = useCallback(async () => {
     const now = Date.now();
@@ -295,7 +327,7 @@ function App() {
 
       // Show popup near cursor immediately
       await ensurePopupAtCursor();
-      void emitTo("popup", "erudaite://popup/state", { status: "Translating…", source: picked, translation: "" }).catch(() => {});
+      emitPopupState({ status: "Translating…", source: picked, translation: "" });
 
       setSourceText(picked);
       setLastCaptureNote(`Capture: ${picked.length} chars`);
@@ -338,7 +370,7 @@ function App() {
         if (msg.type === "delta") {
           full += msg.content;
           setTranslatedText(full);
-          void emitTo("popup", "erudaite://popup/state", { status: "Translating…", translation: full }).catch(() => {});
+          emitPopupState({ status: "Translating…", translation: full });
 
           // Resize popup loosely based on content length (best effort)
           const lines = full.split(/\r?\n/).length;
@@ -350,7 +382,7 @@ function App() {
           }
         } else if (msg.type === "error") {
           setStatus(`Error: ${msg.message}`);
-          void emitTo("popup", "erudaite://popup/state", { status: `Error: ${msg.message}` }).catch(() => {});
+          emitPopupState({ status: `Error: ${msg.message}` });
         }
       };
 
@@ -376,12 +408,10 @@ function App() {
       } else {
         setStatus("Done.");
       }
-      void emitTo("popup", "erudaite://popup/state", { status: "Done." }).catch(() => {});
+      emitPopupState({ status: "Done." });
     } catch (e) {
       setStatus(`Error: ${e instanceof Error ? e.message : String(e)}`);
-      void emitTo("popup", "erudaite://popup/state", {
-        status: `Error: ${e instanceof Error ? e.message : String(e)}`,
-      }).catch(() => {});
+      emitPopupState({ status: `Error: ${e instanceof Error ? e.message : String(e)}` });
     } finally {
       hotkeyInFlightRef.current = false;
       await sleep(50);
@@ -389,6 +419,7 @@ function App() {
   }, [
     closePopupIfOpen,
     ensurePopupAtCursor,
+    emitPopupState,
     settings.apiBaseUrl,
     settings.clipboardMode,
     settings.hotkey,
@@ -396,6 +427,21 @@ function App() {
     translatedText,
     targetLang,
   ]);
+
+  useEffect(() => {
+    const unlistenPromise = (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      return await listen<{ label: string }>("erudaite://popup/ready", (e) => {
+        // #region agent log
+        agentLog("H12", "popup ready received", { label: e.payload?.label ?? null });
+        // #endregion
+        emitPopupState({});
+      });
+    })();
+    return () => {
+      void unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
+    };
+  }, [emitPopupState]);
 
   const handleCopy = useCallback(async () => {
     const text = translatedText.trim();

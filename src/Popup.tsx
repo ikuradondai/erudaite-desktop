@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 type PopupState = {
@@ -11,12 +11,37 @@ type PopupState = {
 export default function Popup() {
   const [state, setState] = useState<PopupState>({ status: "Translating…", source: "", translation: "" });
 
+  // #region agent log
+  function agentLog(message: string, data: Record<string, unknown>) {
+    fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "debug-session",
+        runId: "popup-pre-fix",
+        hypothesisId: "P1",
+        location: "desktop/src/Popup.tsx",
+        message,
+        data,
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }
+  // #endregion
+
   const header = useMemo(() => {
     return state.status || "Translating…";
   }, [state.status]);
 
   useEffect(() => {
+    agentLog("popup mounted", { label: getCurrentWebviewWindow().label });
+    void emit("erudaite://popup/ready", { label: getCurrentWebviewWindow().label }).catch(() => {});
     const unlistenPromise = listen<PopupState>("erudaite://popup/state", (e) => {
+      agentLog("popup received state", {
+        status: e.payload?.status ?? null,
+        sourceLen: (e.payload?.source ?? "").length,
+        translationLen: (e.payload?.translation ?? "").length,
+      });
       setState((s) => ({ ...s, ...e.payload }));
     });
     return () => {
