@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type PopupState = {
   status?: string;
@@ -29,10 +30,6 @@ export default function Popup() {
     }).catch(() => {});
   }
   // #endregion
-
-  const header = useMemo(() => {
-    return state.status || "Translating…";
-  }, [state.status]);
 
   useEffect(() => {
     agentLog("popup mounted", { label: getCurrentWebviewWindow().label });
@@ -75,31 +72,34 @@ export default function Popup() {
       style={{
         width: "100%",
         height: "100%",
-        padding: 12,
+        padding: 10,
         boxSizing: "border-box",
-        background: "rgba(255,255,255,0.95)",
-        borderRadius: 14,
-        boxShadow: "0 14px 40px rgba(0,0,0,0.25)",
-        border: "1px solid rgba(0,0,0,0.10)",
+        background: "rgba(255,255,255,0.98)",
+        borderRadius: 8,
+        boxShadow: "none",
+        border: "1px solid rgba(0,0,0,0.15)",
         overflow: "hidden",
         userSelect: "text",
       }}
     >
       <div
         data-tauri-drag-region
+        onMouseDown={(e) => {
+          if (e.button !== 0) return;
+          // Explicit dragging: works more reliably than drag-region in some environments.
+          void getCurrentWindow().startDragging();
+        }}
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           gap: 10,
           cursor: "move",
-          paddingBottom: 6,
+          paddingBottom: 8,
         }}
         title="Drag to move"
       >
-        <div style={{ fontSize: 12, opacity: 0.7, flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {header}
-        </div>
+        <div style={{ flex: 1 }} />
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <button
             onClick={() => {
@@ -142,20 +142,19 @@ export default function Popup() {
       </div>
 
       <div style={{ marginTop: 10 }}>
-        <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 4 }}>Translation</div>
         <div
           style={{
             fontSize: 13,
             lineHeight: 1.35,
             maxHeight: "30vh",
-            minHeight: 110,
+            minHeight: 90,
             overflow: "auto",
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
-            padding: "10px 12px",
-            borderRadius: 12,
-            background: "rgba(0,0,0,0.02)",
-            border: "1px solid rgba(0,0,0,0.06)",
+            padding: "8px 10px",
+            borderRadius: 6,
+            background: "transparent",
+            border: "1px solid rgba(0,0,0,0.10)",
           }}
         >
           {state.translation || ""}
