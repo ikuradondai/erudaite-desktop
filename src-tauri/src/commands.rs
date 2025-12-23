@@ -19,6 +19,8 @@ fn agent_log(hypothesis_id: &str, message: &str, data: serde_json::Value) {
         .unwrap_or(0)
     });
     let _ = writeln!(f, "{}", v.to_string());
+    // Also print to stdout so we can see logs even if file writing is blocked.
+    println!("[ERUDAITE_DEBUG] {}", v.to_string());
   }
 }
 // #endregion
@@ -210,6 +212,26 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
               let _ = enigo.key(Key::Control, Release);
               // #region agent log
               agent_log("H9", "copy attempt 2/3 sent (Ctrl+Insert, Esc+Ctrl+C)", serde_json::json!({ "pollsAt": polls }));
+              // #endregion
+              // #region agent log
+              let sample2 = clipboard.get_text().ok().map(|s| s.trim().to_string());
+              let kind2 = match &sample2 {
+                None => "none",
+                Some(s) if s.is_empty() => "empty",
+                Some(s) if *s == sentinel => "sentinel",
+                Some(s) if s.contains("__ERUDAITE_SENTINEL__") => "sentinel_like",
+                Some(s) => {
+                  if let Some(prev) = &prev_text {
+                    if prev.trim() == s { "prev" } else { "other" }
+                  } else {
+                    "other"
+                  }
+                }
+              };
+              agent_log("H8", "after retry attempts clipboard sample", serde_json::json!({
+                "kind": kind2,
+                "len": sample2.as_ref().map(|x| x.len()).unwrap_or(0)
+              }));
               // #endregion
             } else {
               // #region agent log
