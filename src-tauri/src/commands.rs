@@ -28,13 +28,24 @@ fn normalize_base_url(base_url: &str) -> String {
 pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, String> {
   // Strategy: save clipboard text -> simulate Ctrl/Cmd+C -> poll clipboard -> restore.
   // NOTE: This only preserves text clipboard (v0). Non-text clipboard formats are not preserved yet.
-  let timeout_ms = timeout_ms.unwrap_or(700);
+  let timeout_ms = timeout_ms.unwrap_or(1200);
 
   let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("clipboard init failed: {e}"))?;
   let prev_text = clipboard.get_text().ok();
 
   // Give the user time to release the hotkey modifiers (e.g. Alt) so that Ctrl+C isn't affected.
-  std::thread::sleep(std::time::Duration::from_millis(140));
+  std::thread::sleep(std::time::Duration::from_millis(180));
+
+  // Put a sentinel into clipboard so we can reliably detect changes even if the copied text equals previous clipboard.
+  let sentinel = format!(
+    "__ERUDAITE_SENTINEL__{}__",
+    std::time::SystemTime::now()
+      .duration_since(std::time::UNIX_EPOCH)
+      .map(|d| d.as_millis())
+      .unwrap_or(0)
+  );
+  let _ = clipboard.set_text(sentinel.clone());
+  std::thread::sleep(std::time::Duration::from_millis(40));
 
   // simulate copy
   #[cfg(target_os = "windows")]
@@ -73,17 +84,12 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
   let started = std::time::Instant::now();
   let mut picked: Option<String> = None;
   while started.elapsed().as_millis() < timeout_ms as u128 {
-    std::thread::sleep(std::time::Duration::from_millis(80));
+    std::thread::sleep(std::time::Duration::from_millis(90));
     let cur = clipboard.get_text().ok();
     if let Some(cur_s) = cur {
       let cur_t = cur_s.trim().to_string();
-      if cur_t.is_empty() {
+      if cur_t.is_empty() || cur_t == sentinel {
         continue;
-      }
-      if let Some(prev) = &prev_text {
-        if prev.trim() == cur_t {
-          continue;
-        }
       }
       picked = Some(cur_t);
       break;
