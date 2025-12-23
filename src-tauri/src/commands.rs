@@ -66,6 +66,10 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
       Enigo, Key, Keyboard, Settings,
     };
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("enigo init failed: {e}"))?;
+    // If the hotkey includes Alt, some apps (including Chrome) may momentarily focus the menu bar.
+    // Press Esc once to return focus to the page before copying the selection.
+    let _ = enigo.key(Key::Escape, Click);
+    std::thread::sleep(std::time::Duration::from_millis(30));
     enigo.key(Key::Control, Press).map_err(|e| format!("enigo key failed: {e}"))?;
     enigo
       .key(Key::Unicode('c'), Click)
