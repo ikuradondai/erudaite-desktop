@@ -129,17 +129,59 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
   {
     // no-op
   }
+  // #region agent log
+  {
+    let sample = clipboard.get_text().ok().map(|s| s.trim().to_string());
+    let kind = match &sample {
+      None => "none",
+      Some(s) if s.is_empty() => "empty",
+      Some(s) if *s == sentinel => "sentinel",
+      Some(s) if s.contains("__ERUDAITE_SENTINEL__") => "sentinel_like",
+      Some(s) => {
+        if let Some(prev) = &prev_text {
+          if prev.trim() == s {
+            "prev"
+          } else {
+            "other"
+          }
+        } else {
+          "other"
+        }
+      }
+    };
+    agent_log("H8", "after key simulation clipboard sample", serde_json::json!({
+      "kind": kind,
+      "len": sample.as_ref().map(|x| x.len()).unwrap_or(0)
+    }));
+  }
+  // #endregion
 
   // poll clipboard for updated selection
   let started = std::time::Instant::now();
   let mut picked: Option<String> = None;
   let mut polls: u32 = 0;
+  let mut last_kind: &'static str = "none";
   while started.elapsed().as_millis() < timeout_ms as u128 {
     std::thread::sleep(std::time::Duration::from_millis(90));
     let cur = clipboard.get_text().ok();
     if let Some(cur_s) = cur {
       polls += 1;
       let cur_t = cur_s.trim().to_string();
+      last_kind = if cur_t.is_empty() {
+        "empty"
+      } else if cur_t == sentinel {
+        "sentinel"
+      } else if cur_t.contains("__ERUDAITE_SENTINEL__") {
+        "sentinel_like"
+      } else if let Some(prev) = &prev_text {
+        if prev.trim() == cur_t {
+          "prev"
+        } else {
+          "other"
+        }
+      } else {
+        "other"
+      };
       if cur_t.is_empty() || cur_t == sentinel || cur_t.contains("__ERUDAITE_SENTINEL__") {
         continue;
       }
@@ -162,7 +204,8 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
   // #region agent log
   agent_log("H6", "capture_selected_text exit", serde_json::json!({
     "polls": polls,
-    "pickedLen": picked.as_ref().map(|s| s.len()).unwrap_or(0)
+    "pickedLen": picked.as_ref().map(|s| s.len()).unwrap_or(0),
+    "lastKind": last_kind
   }));
   // #endregion
 
