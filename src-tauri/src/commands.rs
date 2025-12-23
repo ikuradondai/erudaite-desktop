@@ -2,6 +2,12 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 use std::io::Write;
 use std::hash::{Hash, Hasher};
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::POINT;
+#[cfg(windows)]
+use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+#[cfg(target_os = "macos")]
+use core_graphics::event::CGEvent;
 
 // #region agent log
 fn agent_log(hypothesis_id: &str, message: &str, data: serde_json::Value) {
@@ -42,6 +48,40 @@ pub struct DetectResult {
   pub detected_lang: String,
   pub confidence: f64,
   pub is_mixed: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct CursorPosition {
+  pub x: i32,
+  pub y: i32,
+}
+
+#[tauri::command]
+pub fn get_cursor_position() -> Result<CursorPosition, String> {
+  #[cfg(windows)]
+  unsafe {
+    let mut pt = POINT { x: 0, y: 0 };
+    let ok = GetCursorPos(&mut pt as *mut POINT);
+    if ok == 0 {
+      return Err("GetCursorPos failed".to_string());
+    }
+    return Ok(CursorPosition { x: pt.x, y: pt.y });
+  }
+
+  #[cfg(target_os = "macos")]
+  {
+    let ev = CGEvent::new(std::ptr::null_mut()).map_err(|e| format!("CGEvent::new failed: {e:?}"))?;
+    let loc = ev.location();
+    return Ok(CursorPosition {
+      x: loc.x as i32,
+      y: loc.y as i32,
+    });
+  }
+
+  #[cfg(not(any(windows, target_os = "macos")))]
+  {
+    Err("cursor position not supported on this platform".to_string())
+  }
 }
 
 fn normalize_base_url(base_url: &str) -> String {

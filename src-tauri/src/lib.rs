@@ -7,7 +7,8 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       commands::translate_sse,
       commands::capture_selected_text,
-      commands::detect_language
+      commands::detect_language,
+      commands::get_cursor_position
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {

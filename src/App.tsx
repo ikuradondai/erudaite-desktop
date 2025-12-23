@@ -3,7 +3,10 @@ import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { load } from "@tauri-apps/plugin-store";
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { emitTo } from "@tauri-apps/api/event";
+import { PhysicalSize } from "@tauri-apps/api/dpi";
+import { monitorFromPoint } from "@tauri-apps/api/window";
 import "./App.css";
 
 type ClipboardMode = "displayOnly" | "displayAndCopy" | "copyOnly";
@@ -73,6 +76,7 @@ function App() {
   const [lastCaptureNote, setLastCaptureNote] = useState<string>("");
   const hotkeyInFlightRef = useRef(false);
   const lastHotkeyAtRef = useRef(0);
+  const popupRef = useRef<WebviewWindow | null>(null);
   const storePromise = useMemo(
     () =>
       load("settings.json", {
@@ -110,10 +114,93 @@ function App() {
     });
   }, [settings, storePromise]);
 
+  const closePopupIfOpen = useCallback(async () => {
+    const w = popupRef.current ?? (await WebviewWindow.getByLabel("popup"));
+    if (!w) return false;
+    try {
+      await w.close();
+    } catch {
+      // ignore
+    }
+    popupRef.current = null;
+    return true;
+  }, []);
+
+  const ensurePopupAtCursor = useCallback(async () => {
+    // If already open, just move + focus
+    const existing = popupRef.current ?? (await WebviewWindow.getByLabel("popup"));
+    if (existing) {
+      popupRef.current = existing;
+      try {
+        await existing.show();
+        await existing.setFocus();
+      } catch {
+        // ignore
+      }
+      return existing;
+    }
+
+    const cursor = (await invoke("get_cursor_position")) as { x: number; y: number };
+    const initialW = 360;
+    const initialH = 220;
+    const offsetY = 18;
+
+    // Clamp to current monitor bounds (best effort)
+    let x = Math.floor(cursor.x - initialW / 2);
+    let y = Math.floor(cursor.y + offsetY);
+    try {
+      const m = await monitorFromPoint(cursor.x, cursor.y);
+      if (m) {
+        const mx = m.position.x;
+        const my = m.position.y;
+        const mw = m.size.width;
+        const mh = m.size.height;
+        x = Math.max(mx, Math.min(x, mx + mw - initialW));
+        // If not enough space below cursor, show above
+        if (y + initialH > my + mh) {
+          y = Math.max(my, Math.min(cursor.y - initialH - 12, my + mh - initialH));
+        } else {
+          y = Math.max(my, Math.min(y, my + mh - initialH));
+        }
+      }
+    } catch {
+      // ignore clamp failures
+    }
+
+    const popup = new WebviewWindow("popup", {
+      url: "index.html#/popup",
+      width: initialW,
+      height: initialH,
+      x,
+      y,
+      resizable: false,
+      decorations: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      focus: true,
+    });
+    popupRef.current = popup;
+
+    popup.once("tauri://destroyed", () => {
+      popupRef.current = null;
+    });
+
+    // Ensure content starts in "Translating…" state
+    void emitTo("popup", "erudaite://popup/state", { status: "Translating…", source: "", translation: "" }).catch(() => {});
+
+    return popup;
+  }, []);
+
   const handleHotkey = useCallback(async () => {
     const now = Date.now();
     const deltaMs = lastHotkeyAtRef.current ? now - lastHotkeyAtRef.current : null;
     lastHotkeyAtRef.current = now;
+
+    // Toggle behavior: if popup is open, close it and stop.
+    if (await closePopupIfOpen()) {
+      return;
+    }
 
     if (hotkeyInFlightRef.current) {
       // #region agent log
@@ -182,14 +269,9 @@ function App() {
         return;
       }
 
-      // Now bring the window forward (after capture), so we don't steal focus from the selection source.
-      try {
-        const w = getCurrentWebviewWindow();
-        await w.show();
-        await w.setFocus();
-      } catch {
-        // ignore
-      }
+      // Show popup near cursor immediately
+      await ensurePopupAtCursor();
+      void emitTo("popup", "erudaite://popup/state", { status: "Translating…", source: picked, translation: "" }).catch(() => {});
 
       setSourceText(picked);
       setLastCaptureNote(`Capture: ${picked.length} chars`);
@@ -232,8 +314,19 @@ function App() {
         if (msg.type === "delta") {
           full += msg.content;
           setTranslatedText(full);
+          void emitTo("popup", "erudaite://popup/state", { status: "Translating…", translation: full }).catch(() => {});
+
+          // Resize popup loosely based on content length (best effort)
+          const lines = full.split(/\r?\n/).length;
+          const h = Math.min(300, Math.max(150, 140 + Math.min(8, lines) * 18));
+          const w = Math.min(400, Math.max(300, 360));
+          const p = popupRef.current;
+          if (p) {
+            void p.setSize(new PhysicalSize(w, h)).catch(() => {});
+          }
         } else if (msg.type === "error") {
           setStatus(`Error: ${msg.message}`);
+          void emitTo("popup", "erudaite://popup/state", { status: `Error: ${msg.message}` }).catch(() => {});
         }
       };
 
@@ -259,13 +352,26 @@ function App() {
       } else {
         setStatus("Done.");
       }
+      void emitTo("popup", "erudaite://popup/state", { status: "Done." }).catch(() => {});
     } catch (e) {
       setStatus(`Error: ${e instanceof Error ? e.message : String(e)}`);
+      void emitTo("popup", "erudaite://popup/state", {
+        status: `Error: ${e instanceof Error ? e.message : String(e)}`,
+      }).catch(() => {});
     } finally {
       hotkeyInFlightRef.current = false;
       await sleep(50);
     }
-  }, [settings.apiBaseUrl, settings.clipboardMode, targetLang, translatedText]);
+  }, [
+    closePopupIfOpen,
+    ensurePopupAtCursor,
+    settings.apiBaseUrl,
+    settings.clipboardMode,
+    settings.hotkey,
+    settings.routingStrategy,
+    translatedText,
+    targetLang,
+  ]);
 
   const handleCopy = useCallback(async () => {
     const text = translatedText.trim();
