@@ -52,6 +52,7 @@ function App() {
   const [detectedLang, setDetectedLang] = useState<string>("");
   const [targetLang, setTargetLang] = useState<string>(""); // computed per strategy; shown in UI
   const [showWizard, setShowWizard] = useState<boolean>(false);
+  const [lastCaptureNote, setLastCaptureNote] = useState<string>("");
   const storePromise = useMemo(
     () =>
       load("settings.json", {
@@ -110,6 +111,7 @@ function App() {
         } catch {
           // ignore
         }
+        setLastCaptureNote("Capture: empty (make sure Chrome is focused, select text, then press hotkey again).");
         setStatus("No selected text detected. Select text and press the hotkey again.");
         return;
       }
@@ -124,6 +126,7 @@ function App() {
       }
 
       setSourceText(picked);
+      setLastCaptureNote(`Capture: ${picked.length} chars`);
       setStatus("Translating…");
 
       // detect language (for routing)
@@ -414,6 +417,7 @@ function App() {
                 ? settings.fixedTargetLang ?? ""
                 : targetLang || settings.lastUsedTargetLang || ""
             }
+            readOnly={settings.routingStrategy === "defaultBased"}
             onChange={(e) => {
               const v = e.target.value;
               if (settings.routingStrategy === "alwaysFixed") {
@@ -434,10 +438,11 @@ function App() {
           Detected: {detectedLang} → Target: {targetLang || settings.lastUsedTargetLang || ""}
         </div>
       ) : null}
+      {lastCaptureNote ? <div style={{ marginTop: 4, fontSize: 12, opacity: 0.7 }}>{lastCaptureNote}</div> : null}
 
       <div style={{ marginTop: 14 }}>
         <button onClick={() => void handleHotkey()} style={{ padding: "8px 12px" }}>
-          Test hotkey handler (uses clipboard)
+          Test capture/translate (current focused window)
         </button>
         <button
           onClick={() => void handleCopy()}
