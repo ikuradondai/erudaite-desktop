@@ -1,0 +1,6 @@
+[build]
+# NOTE: This repo is under OneDrive on Windows; Cargo builds can fail when writing to OneDrive paths.
+# Use a short local path for target artifacts to avoid "output path is not a writable directory".
+target-dir = "C:/cargo-target"
+
+
