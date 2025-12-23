@@ -1,6 +1,7 @@
 use serde::Serialize;
 use tauri::ipc::Channel;
 use std::io::Write;
+use std::hash::{Hash, Hasher};
 
 // #region agent log
 fn agent_log(hypothesis_id: &str, message: &str, data: serde_json::Value) {
@@ -264,6 +265,29 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
     "pickedLen": picked.as_ref().map(|s| s.len()).unwrap_or(0),
     "lastKind": last_kind
   }));
+  // #endregion
+
+  // #region agent log
+  if let Some(p) = &picked {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    p.hash(&mut h);
+    let hash64 = h.finish();
+    agent_log("H10", "picked summary", serde_json::json!({
+      "bytes": p.len(),
+      "chars": p.chars().count(),
+      "isAscii": p.is_ascii(),
+      "hasNewline": p.contains('\n'),
+      "hash64": format!("{:016x}", hash64)
+    }));
+  } else {
+    agent_log("H10", "picked summary", serde_json::json!({
+      "bytes": 0,
+      "chars": 0,
+      "isAscii": null,
+      "hasNewline": null,
+      "hash64": null
+    }));
+  }
   // #endregion
 
   Ok(picked.unwrap_or_default())
