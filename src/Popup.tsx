@@ -35,16 +35,8 @@ export default function Popup() {
   }, []);
 
   useEffect(() => {
-    // Optional: close when focus is lost (acts like "click outside")
-    const w = getCurrentWebviewWindow();
-    const unsubPromise = w.onFocusChanged(({ payload }) => {
-      if (payload === false) {
-        void w.close();
-      }
-    });
-    return () => {
-      void unsubPromise.then((unsub) => unsub()).catch(() => {});
-    };
+    // NOTE: "close on blur" is intentionally disabled for now.
+    // Some environments can emit a blur immediately after creation, which makes the popup appear to "not show".
   }, []);
 
   return (

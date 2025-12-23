@@ -80,6 +80,7 @@ name = "app"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "core-graphics 0.24.0",
  "enigo",
  "futures-util",
  "log",
@@ -92,6 +93,7 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-log",
  "tauri-plugin-store",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

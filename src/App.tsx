@@ -167,8 +167,17 @@ function App() {
       // ignore clamp failures
     }
 
+    // In dev, Vite serves on http://localhost:5173; in prod it's a file URL.
+    const popupUrl = window.location.protocol.startsWith("http")
+      ? `${window.location.origin}/#/popup`
+      : "index.html#/popup";
+
+    // #region agent log
+    agentLog("H11", "creating popup window", { popupUrl, x, y, initialW, initialH });
+    // #endregion
+
     const popup = new WebviewWindow("popup", {
-      url: "index.html#/popup",
+      url: popupUrl,
       width: initialW,
       height: initialH,
       x,
@@ -179,8 +188,23 @@ function App() {
       alwaysOnTop: true,
       skipTaskbar: true,
       focus: true,
+      visible: true,
+      shadow: true,
     });
     popupRef.current = popup;
+
+    popup.once("tauri://created", () => {
+      // #region agent log
+      agentLog("H11", "popup created", {});
+      // #endregion
+      void popup.show().catch(() => {});
+      void popup.setFocus().catch(() => {});
+    });
+    popup.once("tauri://error", (e) => {
+      // #region agent log
+      agentLog("H11", "popup create error", { e });
+      // #endregion
+    });
 
     popup.once("tauri://destroyed", () => {
       popupRef.current = null;
