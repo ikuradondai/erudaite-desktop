@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { load } from "@tauri-apps/plugin-store";
@@ -71,6 +71,8 @@ function App() {
   const [targetLang, setTargetLang] = useState<string>(""); // computed per strategy; shown in UI
   const [showWizard, setShowWizard] = useState<boolean>(false);
   const [lastCaptureNote, setLastCaptureNote] = useState<string>("");
+  const hotkeyInFlightRef = useRef(false);
+  const lastHotkeyAtRef = useRef(0);
   const storePromise = useMemo(
     () =>
       load("settings.json", {
@@ -109,6 +111,18 @@ function App() {
   }, [settings, storePromise]);
 
   const handleHotkey = useCallback(async () => {
+    const now = Date.now();
+    const deltaMs = lastHotkeyAtRef.current ? now - lastHotkeyAtRef.current : null;
+    lastHotkeyAtRef.current = now;
+
+    if (hotkeyInFlightRef.current) {
+      // #region agent log
+      agentLog("H7", "hotkey ignored (in-flight)", { deltaMs });
+      // #endregion
+      return;
+    }
+
+    hotkeyInFlightRef.current = true;
     setStatus("Capturing selected text…");
     setTranslatedText("");
     try {
@@ -116,6 +130,7 @@ function App() {
       let picked = "";
       // #region agent log
       agentLog("H1", "hotkey handler start", {
+        deltaMs,
         hotkey: settings.hotkey,
         apiBaseUrl: settings.apiBaseUrl,
         routingStrategy: settings.routingStrategy,
@@ -247,6 +262,7 @@ function App() {
     } catch (e) {
       setStatus(`Error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
+      hotkeyInFlightRef.current = false;
       await sleep(50);
     }
   }, [settings.apiBaseUrl, settings.clipboardMode, targetLang, translatedText]);
