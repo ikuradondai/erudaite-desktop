@@ -123,8 +123,8 @@ function App() {
       });
       // #endregion
       try {
-        // NOTE: Rust側の引数名はsnake_caseなので、timeout_msで渡す
-        const args = { timeout_ms: 1600 };
+        // NOTE: Tauri invoke側はcamelCaseで渡す（Rustのtimeout_msにマッピングされる）
+        const args = { timeoutMs: 1600 };
         // #region agent log
         agentLog("H2", "invoke capture_selected_text", { argsKeys: Object.keys(args) });
         // #endregion
