@@ -3,6 +3,7 @@ import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { load } from "@tauri-apps/plugin-store";
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "./App.css";
 
 type ClipboardMode = "displayOnly" | "displayAndCopy" | "copyOnly";
@@ -23,7 +24,7 @@ type Settings = {
 };
 
 const DEFAULT_SETTINGS: Settings = {
-  hotkey: "CommandOrControl+Shift+E",
+  hotkey: navigator.userAgent.toLowerCase().includes("windows") ? "Ctrl+Shift+E" : "CommandOrControl+Shift+E",
   clipboardMode: "displayOnly",
   apiBaseUrl: "https://lighting-translation.vercel.app",
   defaultLanguage: "Japanese",
@@ -37,7 +38,8 @@ const DEFAULT_SETTINGS: Settings = {
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const FALLBACK_HOTKEY = "CommandOrControl+Shift+Space";
+const isWindows = navigator.userAgent.toLowerCase().includes("windows");
+const FALLBACK_HOTKEY = isWindows ? "Ctrl+Shift+Space" : "CommandOrControl+Shift+Space";
 
 function App() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -86,6 +88,15 @@ function App() {
   }, [settings, storePromise]);
 
   const handleHotkey = useCallback(async () => {
+    // Ensure the window is visible when triggered globally
+    try {
+      const w = getCurrentWebviewWindow();
+      await w.show();
+      await w.setFocus();
+    } catch {
+      // ignore
+    }
+
     setStatus("Capturing selected text…");
     setTranslatedText("");
     try {
