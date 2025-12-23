@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
-import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { load } from "@tauri-apps/plugin-store";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -97,10 +97,22 @@ function App() {
       // OS全体の選択取得（擬似Ctrl/Cmd+C→復元）をRust側で実施
       let picked = "";
       try {
-        picked = String(await invoke("capture_selected_text", { timeoutMs: 1200 })).trim();
-      } catch {
-        // fallback: clipboard text only
-        picked = String((await readText()) ?? "").trim();
+        // NOTE: Rust側の引数名はsnake_caseなので、timeout_msで渡す
+        picked = String(await invoke("capture_selected_text", { timeout_ms: 1600 })).trim();
+      } catch (e) {
+        // Do NOT fallback to clipboard here; it can silently translate stale clipboard content.
+        // Instead, surface an actionable error to the user.
+        try {
+          const w = getCurrentWebviewWindow();
+          await w.show();
+          await w.setFocus();
+        } catch {
+          // ignore
+        }
+        const msg = e instanceof Error ? e.message : String(e);
+        setLastCaptureNote(`Capture: failed (${msg})`);
+        setStatus("Capture failed. Keep Chrome focused, select text, then press hotkey again.");
+        return;
       }
       if (!picked) {
         // Bring the window forward so the user sees the failure reason.
