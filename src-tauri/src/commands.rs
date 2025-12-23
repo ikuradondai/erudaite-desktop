@@ -45,7 +45,18 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
       .unwrap_or(0)
   );
   let _ = clipboard.set_text(sentinel.clone());
-  std::thread::sleep(std::time::Duration::from_millis(40));
+  // Wait until the sentinel is actually observable (Windows clipboard can lag).
+  {
+    let started = std::time::Instant::now();
+    while started.elapsed().as_millis() < 300 {
+      if let Ok(cur) = clipboard.get_text() {
+        if cur.trim() == sentinel {
+          break;
+        }
+      }
+      std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+  }
 
   // simulate copy
   #[cfg(target_os = "windows")]
@@ -90,6 +101,12 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
       let cur_t = cur_s.trim().to_string();
       if cur_t.is_empty() || cur_t == sentinel || cur_t.contains("__ERUDAITE_SENTINEL__") {
         continue;
+      }
+      // If clipboard reverted to previous content without a successful copy, treat as failure.
+      if let Some(prev) = &prev_text {
+        if prev.trim() == cur_t {
+          continue;
+        }
       }
       picked = Some(cur_t);
       break;
