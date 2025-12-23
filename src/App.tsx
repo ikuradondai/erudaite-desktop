@@ -24,8 +24,10 @@ type Settings = {
 };
 
 const DEFAULT_SETTINGS: Settings = {
-  // NOTE: Windows default requested: Ctrl+Shift+E (may conflict with some apps; user can change it).
-  hotkey: navigator.userAgent.toLowerCase().includes("windows") ? "Ctrl+Shift+E" : "CommandOrControl+Shift+E",
+  // NOTE:
+  // - Windows: prefer function keys to avoid conflicts with browsers/IDEs.
+  // - macOS: Cmd+Shift+E is usually safe; user can change in-app if it conflicts.
+  hotkey: navigator.userAgent.toLowerCase().includes("windows") ? "F8" : "CommandOrControl+Shift+E",
   clipboardMode: "displayOnly",
   apiBaseUrl: "https://lighting-translation.vercel.app",
   defaultLanguage: "Japanese",
@@ -40,7 +42,7 @@ const DEFAULT_SETTINGS: Settings = {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const isWindows = navigator.userAgent.toLowerCase().includes("windows");
-const FALLBACK_HOTKEY = isWindows ? "Ctrl+Shift+Space" : "CommandOrControl+Shift+Space";
+const FALLBACK_HOTKEY = isWindows ? "F9" : "CommandOrControl+Alt+E";
 
 function App() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);

@@ -3,7 +3,7 @@
 Global-hotkey “shortcut translation” desktop app for **ErudAite / Lightning Translation**.
 
 ## Features (v0)
-- Global hotkey: **Ctrl+Shift+E** (Windows) / **⌘+Shift+E** (macOS)
+- Global hotkey: **Ctrl+Shift+Space** (Windows) / **⌃⌘+Shift+Space** (macOS; `CommandOrControl+Shift+Space`)
 - Captures selected text via **Ctrl/Cmd+C → clipboard read → clipboard restore** (text-only restore)
 - Calls Lightning Translation:
   - `POST /api/detect-language` (routing)
