@@ -96,7 +96,7 @@ function App() {
       // OS全体の選択取得（擬似Ctrl/Cmd+C→復元）をRust側で実施
       let picked = "";
       try {
-        picked = String(await invoke("capture_selected_text", { timeout_ms: 700 })).trim();
+        picked = String(await invoke("capture_selected_text", { timeoutMs: 1200 })).trim();
       } catch {
         // fallback: clipboard text only
         picked = String((await readText()) ?? "").trim();
@@ -129,7 +129,7 @@ function App() {
       // detect language (for routing)
       let detected = "Unknown";
       try {
-        const r = (await invoke("detect_language", { base_url: settings.apiBaseUrl, text: picked })) as {
+        const r = (await invoke("detect_language", { baseUrl: settings.apiBaseUrl, text: picked })) as {
           detected_lang?: string;
         };
         detected = String(r?.detected_lang ?? "Unknown");
@@ -166,13 +166,13 @@ function App() {
       };
 
       await invoke("translate_sse", {
-        base_url: settings.apiBaseUrl,
+        baseUrl: settings.apiBaseUrl,
         text: picked,
-        target_lang: target,
+        targetLang: target,
         mode: "standard",
-        explanation_lang: "ja",
-        is_reverse: false,
-        on_event: ch,
+        explanationLang: "ja",
+        isReverse: false,
+        onEvent: ch,
       });
 
       // remember last used target for alwaysLastUsed
@@ -222,13 +222,13 @@ function App() {
       }
     };
     await invoke("translate_sse", {
-      base_url: settings.apiBaseUrl,
+      baseUrl: settings.apiBaseUrl,
       text: src,
-      target_lang: to,
+      targetLang: to,
       mode: "literal",
-      explanation_lang: "ja",
-      is_reverse: true,
-      on_event: ch,
+      explanationLang: "ja",
+      isReverse: true,
+      onEvent: ch,
     });
     setStatus("Done.");
   }, [detectedLang, settings.apiBaseUrl, translatedText]);

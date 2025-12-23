@@ -88,7 +88,7 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
     let cur = clipboard.get_text().ok();
     if let Some(cur_s) = cur {
       let cur_t = cur_s.trim().to_string();
-      if cur_t.is_empty() || cur_t == sentinel {
+      if cur_t.is_empty() || cur_t == sentinel || cur_t.contains("__ERUDAITE_SENTINEL__") {
         continue;
       }
       picked = Some(cur_t);
