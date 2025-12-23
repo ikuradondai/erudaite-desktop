@@ -34,5 +34,5 @@ enigo = "0.2"
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
 
-[target.'cfg(target_os = \"macos\")'.dependencies]
+[target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.24"
