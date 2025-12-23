@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 type PopupState = {
   status?: string;
-  source?: string;
   translation?: string;
 };
 
 export default function Popup() {
-  const [state, setState] = useState<PopupState>({ status: "Translating…", source: "", translation: "" });
+  const [state, setState] = useState<PopupState>({ status: "Translating…", translation: "" });
+  const [copied, setCopied] = useState(false);
 
   // #region agent log
   function agentLog(message: string, data: Record<string, unknown>) {
@@ -39,7 +40,6 @@ export default function Popup() {
     const unlistenPromise = listen<PopupState>("erudaite://popup/state", (e) => {
       agentLog("popup received state", {
         status: e.payload?.status ?? null,
-        sourceLen: (e.payload?.source ?? "").length,
         translationLen: (e.payload?.translation ?? "").length,
       });
       setState((s) => ({ ...s, ...e.payload }));
@@ -48,6 +48,12 @@ export default function Popup() {
       void unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
     };
   }, []);
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = window.setTimeout(() => setCopied(false), 900);
+    return () => window.clearTimeout(t);
+  }, [copied]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -79,66 +85,80 @@ export default function Popup() {
         userSelect: "text",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <div style={{ fontSize: 12, opacity: 0.7 }}>{header}</div>
-        <button
-          onClick={() => void getCurrentWebviewWindow().close()}
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: 10,
-            border: "1px solid rgba(0,0,0,0.12)",
-            background: "rgba(255,255,255,0.9)",
-            cursor: "pointer",
-            lineHeight: "24px",
-          }}
-          aria-label="Close"
-          title="Close (Esc)"
-        >
-          ×
-        </button>
+      <div
+        data-tauri-drag-region
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          cursor: "move",
+          paddingBottom: 6,
+        }}
+        title="Drag to move"
+      >
+        <div style={{ fontSize: 12, opacity: 0.7, flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {header}
+        </div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <button
+            onClick={() => {
+              const t = state.translation?.trim() ?? "";
+              if (!t) return;
+              void writeText(t).then(() => setCopied(true)).catch(() => {});
+            }}
+            style={{
+              height: 26,
+              padding: "0 10px",
+              borderRadius: 10,
+              border: "1px solid rgba(0,0,0,0.12)",
+              background: "rgba(255,255,255,0.9)",
+              cursor: state.translation?.trim() ? "pointer" : "not-allowed",
+              opacity: state.translation?.trim() ? 1 : 0.45,
+              fontSize: 12,
+            }}
+            aria-label="Copy translation"
+            title="Copy"
+          >
+            {copied ? "✓" : "📋"}
+          </button>
+          <button
+            onClick={() => void getCurrentWebviewWindow().close()}
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 10,
+              border: "1px solid rgba(0,0,0,0.12)",
+              background: "rgba(255,255,255,0.9)",
+              cursor: "pointer",
+              lineHeight: "24px",
+            }}
+            aria-label="Close"
+            title="Close (Esc)"
+          >
+            ×
+          </button>
+        </div>
       </div>
 
-      <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-        <div>
-          <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 4 }}>Source</div>
-          <div
-            style={{
-              fontSize: 13,
-              lineHeight: 1.35,
-              maxHeight: 72,
-              overflow: "auto",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              padding: "8px 10px",
-              borderRadius: 10,
-              background: "rgba(0,0,0,0.03)",
-              border: "1px solid rgba(0,0,0,0.06)",
-            }}
-          >
-            {state.source || ""}
-          </div>
-        </div>
-
-        <div>
-          <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 4 }}>Translation</div>
-          <div
-            style={{
-              fontSize: 13,
-              lineHeight: 1.35,
-              maxHeight: "30vh",
-              minHeight: 72,
-              overflow: "auto",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              padding: "8px 10px",
-              borderRadius: 10,
-              background: "rgba(0,0,0,0.02)",
-              border: "1px solid rgba(0,0,0,0.06)",
-            }}
-          >
-            {state.translation || ""}
-          </div>
+      <div style={{ marginTop: 10 }}>
+        <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 4 }}>Translation</div>
+        <div
+          style={{
+            fontSize: 13,
+            lineHeight: 1.35,
+            maxHeight: "30vh",
+            minHeight: 110,
+            overflow: "auto",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            padding: "10px 12px",
+            borderRadius: 12,
+            background: "rgba(0,0,0,0.02)",
+            border: "1px solid rgba(0,0,0,0.06)",
+          }}
+        >
+          {state.translation || ""}
         </div>
       </div>
     </div>
