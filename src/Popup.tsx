@@ -12,42 +12,17 @@ export default function Popup() {
   const [state, setState] = useState<PopupState>({ status: "Translating…", translation: "" });
   const hasFocusedRef = useRef(false);
 
-  // #region agent log
-  function agentLog(message: string, data: Record<string, unknown>) {
-    fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: "debug-session",
-        runId: "popup-close-v2",
-        hypothesisId: "D1",
-        location: "desktop/src/Popup.tsx",
-        message,
-        data,
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-  }
-  // #endregion
-
-  const closeSelf = (reason: string) => {
+  const closeSelf = (_reason: string) => {
     const w = getCurrentWebviewWindow();
-    agentLog("closeSelf called", { reason, label: w.label });
     // IMPORTANT: `close()` can resolve even if the window stays visible (close-request accepted but not applied).
     // To guarantee UX, hide first (disappear), then close/destroy for cleanup.
     w.hide()
-      .then(async () => {
-        const vis = await getCurrentWindow().isVisible().catch(() => null);
-        agentLog("hide() resolved", { reason, visibleAfter: vis });
-      })
-      .catch((e) => agentLog("hide() rejected", { reason, err: e instanceof Error ? e.message : String(e) }));
+      .catch(() => {});
 
     // Force destroy to avoid leaving a hidden zombie window with the same label (breaks reopen).
     getCurrentWindow()
       .destroy()
-      .then(() => agentLog("destroy() resolved", { reason }))
-      .catch((e) => {
-        agentLog("destroy() rejected", { reason, err: e instanceof Error ? e.message : String(e) });
+      .catch(() => {
         // Best-effort fallback
         w.close().catch(() => {});
       });
@@ -55,9 +30,8 @@ export default function Popup() {
 
   useEffect(() => {
     const w = getCurrentWebviewWindow();
-    agentLog("mounted", { label: w.label, href: window.location.href });
-    const unlistenDestroyedP = w.listen("tauri://destroyed", () => agentLog("tauri destroyed", {}));
-    const unlistenCloseReqP = w.listen("tauri://close-requested", () => agentLog("tauri close-requested", {}));
+    const unlistenDestroyedP = w.listen("tauri://destroyed", () => {});
+    const unlistenCloseReqP = w.listen("tauri://close-requested", () => {});
     void emit("erudaite://popup/ready", { label: getCurrentWebviewWindow().label }).catch(() => {});
     const unlistenPromise = listen<PopupState>("erudaite://popup/state", (e) => {
       setState((s) => ({ ...s, ...e.payload }));
@@ -74,7 +48,6 @@ export default function Popup() {
       // Some platforms don't emit focusChanged(true) reliably.
       // If we receive any key events, the popup is effectively focused.
       hasFocusedRef.current = true;
-      agentLog("keydown", { key: e.key });
       if (e.key === "Escape") {
         closeSelf("esc");
       }
@@ -97,7 +70,6 @@ export default function Popup() {
     // Guard: only close on blur after we have successfully received focus at least once.
     const w = getCurrentWebviewWindow();
     const unsubPromise = w.onFocusChanged(({ payload }) => {
-      agentLog("focusChanged", { focused: payload, hasFocused: hasFocusedRef.current });
       if (payload === true) {
         hasFocusedRef.current = true;
         return;

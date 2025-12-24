@@ -48,24 +48,6 @@ const FALLBACK_HOTKEY = "CommandOrControl+Shift+Alt+Q";
 
 // (popup-close instrumentation removed)
 
-// #region agent log
-function agentLog(message: string, data: Record<string, unknown>) {
-  fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "debug-session",
-      runId: "popup-reopen",
-      hypothesisId: "R1",
-      location: "desktop/src/App.tsx",
-      message,
-      data,
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-}
-// #endregion
-
 function App() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [status, setStatus] = useState<string>("");
@@ -137,28 +119,24 @@ function App() {
       try {
         w = await WebviewWindow.getByLabel("popup");
       } catch (e) {
-        agentLog("closePopupIfOpen getByLabel threw", { err: e instanceof Error ? e.message : String(e) });
         return false;
       }
     }
     if (!w) return false;
     try {
       const vis = await w.isVisible();
-      agentLog("closePopupIfOpen found", { visible: vis });
       // Only treat as "open" if it's actually visible. Hidden/closed windows should NOT short-circuit hotkey.
       if (!vis) {
         popupRef.current = null;
         return false;
       }
     } catch (e) {
-      agentLog("closePopupIfOpen found (isVisible failed)", { err: e instanceof Error ? e.message : String(e) });
+      void e;
     }
     try {
       // Force-destroy to avoid leaving a hidden zombie window with the same label.
       await w.destroy();
-      agentLog("closePopupIfOpen destroy() resolved", {});
     } catch {
-      agentLog("closePopupIfOpen destroy() rejected", {});
       // ignore
     }
     popupRef.current = null;
@@ -172,7 +150,6 @@ function App() {
       try {
         existing = await WebviewWindow.getByLabel("popup");
       } catch (e) {
-        agentLog("ensurePopupAtCursor getByLabel threw", { err: e instanceof Error ? e.message : String(e) });
         existing = null;
       }
     }
@@ -180,21 +157,18 @@ function App() {
       popupRef.current = existing;
       try {
         const vis = await existing.isVisible();
-        agentLog("ensurePopupAtCursor reuse", { visibleBefore: vis });
         if (!vis) {
           // A hidden/stale window with the same label can stick around and refuse to show.
-          agentLog("ensurePopupAtCursor reuse is hidden -> destroy+recreate", {});
           try {
             await existing.destroy();
-            agentLog("ensurePopupAtCursor stale destroy() resolved", {});
           } catch (e) {
-            agentLog("ensurePopupAtCursor stale destroy() rejected", { err: e instanceof Error ? e.message : String(e) });
+            void e;
           }
           popupRef.current = null;
           existing = null;
         }
       } catch (e) {
-        agentLog("ensurePopupAtCursor reuse (isVisible failed)", { err: e instanceof Error ? e.message : String(e) });
+        void e;
       }
       if (existing) {
         try {
@@ -202,23 +176,20 @@ function App() {
           await existing.setFocus();
           try {
             const vis2 = await existing.isVisible();
-            agentLog("ensurePopupAtCursor reuse show resolved", { visibleAfter: vis2 });
             if (!vis2) {
-              agentLog("ensurePopupAtCursor reuse still hidden -> destroy+recreate", {});
               await existing.destroy().catch(() => {});
               popupRef.current = null;
               existing = null;
             }
           } catch {
-            agentLog("ensurePopupAtCursor reuse show resolved (isVisible failed)", {});
+            // ignore
           }
         } catch (e) {
-          agentLog("ensurePopupAtCursor reuse show rejected", { err: e instanceof Error ? e.message : String(e) });
+          void e;
           try {
             await existing.destroy();
-            agentLog("ensurePopupAtCursor reuse destroy() resolved", {});
           } catch (e2) {
-            agentLog("ensurePopupAtCursor reuse destroy() rejected", { err: e2 instanceof Error ? e2.message : String(e2) });
+            void e2;
           }
           popupRef.current = null;
           existing = null;
@@ -259,8 +230,6 @@ function App() {
       ? `${window.location.origin}/#/popup`
       : "index.html#/popup";
 
-    agentLog("ensurePopupAtCursor create", { popupUrl, x, y, w: initialW, h: initialH });
-
     const popup = new WebviewWindow("popup", {
       url: popupUrl,
       width: initialW,
@@ -297,24 +266,19 @@ function App() {
   const handleHotkey = useCallback(async () => {
     const now = Date.now();
     lastHotkeyAtRef.current = now;
-    agentLog("hotkey start", { hasPopupRef: !!popupRef.current });
-
     // Toggle behavior: if popup is open, close it and stop.
     let closed = false;
     try {
       closed = await closePopupIfOpen();
-      agentLog("closePopupIfOpen result", { closed });
     } catch (e) {
-      agentLog("closePopupIfOpen threw", { err: e instanceof Error ? e.message : String(e) });
+      void e;
       closed = false;
     }
     if (closed) {
-      agentLog("hotkey short-circuit by closePopupIfOpen", {});
       return;
     }
 
     if (hotkeyInFlightRef.current) {
-      agentLog("hotkey ignored (in-flight)", {});
       return;
     }
 
