@@ -51,6 +51,13 @@ export default function Popup() {
 
   useEffect(() => {
     const w = getCurrentWebviewWindow();
+    // If the popup is focused immediately on open, we can miss the initial focusChanged(true)
+    // event depending on timing. In that case, document.hasFocus() will already be true.
+    // Mark as "has focused" so the very first outside click (blur) closes immediately.
+    if (typeof document !== "undefined" && document.hasFocus()) {
+      hasFocusedRef.current = true;
+      setIsFocused(true);
+    }
     // #region agent log (H1/H2)
     fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
       method: "POST",
