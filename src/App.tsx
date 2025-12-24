@@ -9,6 +9,24 @@ import { PhysicalSize } from "@tauri-apps/api/dpi";
 import { monitorFromPoint } from "@tauri-apps/api/window";
 import "./App.css";
 
+// #region agent log helpers
+const __agentLog = (hypothesisId: string, location: string, message: string, data: Record<string, unknown>) => {
+  fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionId: "debug-session",
+      runId: "lang-routing-pre-fix",
+      hypothesisId,
+      location,
+      message,
+      data,
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+};
+// #endregion
+
 type ClipboardMode = "displayOnly" | "displayAndCopy" | "copyOnly";
 
 type RoutingStrategy = "defaultBased" | "alwaysLastUsed" | "alwaysFixed";
@@ -458,6 +476,18 @@ function App() {
         return;
       }
 
+      // #region agent log (H1/H2/H3)
+      __agentLog("H1", "desktop/src/App.tsx:handleHotkey", "picked text + settings snapshot", {
+        pickedLen: picked.length,
+        routingStrategy: settings.routingStrategy,
+        defaultLanguage: settings.defaultLanguage,
+        secondaryLanguage: settings.secondaryLanguage,
+        fixedTargetLang: settings.fixedTargetLang,
+        lastUsedTargetLang: settings.lastUsedTargetLang,
+        apiBaseUrl: settings.apiBaseUrl,
+      });
+      // #endregion
+
       // Show popup near cursor immediately
       await ensurePopupAtCursor();
       emitPopupState({ status: "Translating…", source: picked, translation: "" });
@@ -473,6 +503,17 @@ function App() {
       const runTranslate = (target: string) => {
         const runId = ++translationRunIdRef.current;
         let full = "";
+
+        // #region agent log (H1/H2/H3)
+        __agentLog("H2", "desktop/src/App.tsx:runTranslate", "starting translate_sse", {
+          runId,
+          target,
+          routingStrategy: settings.routingStrategy,
+          defaultLanguage: settings.defaultLanguage,
+          secondaryLanguage: settings.secondaryLanguage,
+          fixedTargetLang: settings.fixedTargetLang,
+        });
+        // #endregion
 
         setTargetLang(target);
         setTranslatedText("");
@@ -537,6 +578,13 @@ function App() {
           } catch {
             // ignore
           }
+          // #region agent log (H1)
+          __agentLog("H1", "desktop/src/App.tsx:detect_language", "detect_language result (alwaysFixed)", {
+            detectedForUi,
+            defaultLanguage: settings.defaultLanguage,
+            secondaryLanguage: settings.secondaryLanguage,
+          });
+          // #endregion
           setDetectedLang(detectedForUi);
         })();
       } else if (settings.routingStrategy === "alwaysLastUsed") {
@@ -562,6 +610,16 @@ function App() {
             ? settings.secondaryLanguage
             : settings.defaultLanguage;
 
+        // #region agent log (H4)
+        __agentLog("H4", "desktop/src/App.tsx:defaultBased", "heuristic decision", {
+          kind,
+          heuristicDetected,
+          target0,
+          defaultLanguage: settings.defaultLanguage,
+          secondaryLanguage: settings.secondaryLanguage,
+        });
+        // #endregion
+
         active = runTranslate(target0);
 
         // detect_language in parallel; potentially restart.
@@ -573,10 +631,27 @@ function App() {
         } catch {
           detectedForUi = heuristicDetected ?? "Unknown";
         }
+        // #region agent log (H1)
+        __agentLog("H1", "desktop/src/App.tsx:detect_language", "detect_language result (defaultBased)", {
+          detectedForUi,
+          defaultLanguage: settings.defaultLanguage,
+          secondaryLanguage: settings.secondaryLanguage,
+          target0,
+        });
+        // #endregion
         setDetectedLang(detectedForUi);
 
         if (detectedForUi !== "Unknown") {
           const targetReal = computeTargetDefaultBased(detectedForUi);
+          // #region agent log (H1)
+          __agentLog("H1", "desktop/src/App.tsx:defaultBased", "targetReal computed", {
+            detectedForUi,
+            targetReal,
+            defaultLanguage: settings.defaultLanguage,
+            secondaryLanguage: settings.secondaryLanguage,
+            activeTargetBefore: active.target,
+          });
+          // #endregion
           if (targetReal !== active.target) {
             active = runTranslate(targetReal);
           }
