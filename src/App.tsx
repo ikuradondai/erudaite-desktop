@@ -145,10 +145,17 @@ function App() {
     try {
       const vis = await w.isVisible();
       agentLog("closePopupIfOpen found", { visible: vis });
+      // Only treat as "open" if it's actually visible. Hidden/closed windows should NOT short-circuit hotkey.
+      if (!vis) {
+        popupRef.current = null;
+        return false;
+      }
     } catch (e) {
       agentLog("closePopupIfOpen found (isVisible failed)", { err: e instanceof Error ? e.message : String(e) });
     }
     try {
+      // Hide first to guarantee it disappears, then close for cleanup (best effort).
+      await w.hide().catch(() => {});
       await w.close();
       agentLog("closePopupIfOpen close() resolved", {});
     } catch {
