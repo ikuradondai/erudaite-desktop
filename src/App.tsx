@@ -20,6 +20,7 @@ type Settings = {
   defaultLanguage: string; // e.g. "Japanese"
   secondaryLanguage: string; // e.g. "English (US)"
   routingStrategy: RoutingStrategy;
+  popupFocusOnOpen: boolean;
   lastUsedTargetLang?: string;
   fixedTargetLang?: string;
   onboarded?: boolean;
@@ -36,6 +37,7 @@ const DEFAULT_SETTINGS: Settings = {
   defaultLanguage: "Japanese",
   secondaryLanguage: "English (US)",
   routingStrategy: "defaultBased",
+  popupFocusOnOpen: true,
   onboarded: false,
   favoritePairs: [
     { from: "English (US)", to: "Japanese" },
@@ -173,7 +175,9 @@ function App() {
       if (existing) {
         try {
           await existing.show();
-          await existing.setFocus();
+          if (settings.popupFocusOnOpen) {
+            await existing.setFocus();
+          }
           try {
             const vis2 = await existing.isVisible();
             if (!vis2) {
@@ -241,7 +245,7 @@ function App() {
       transparent: false,
       alwaysOnTop: true,
       skipTaskbar: true,
-      focus: true,
+      focus: settings.popupFocusOnOpen,
       visible: true,
       shadow: true,
     });
@@ -249,7 +253,9 @@ function App() {
 
     popup.once("tauri://created", () => {
       void popup.show().catch(() => {});
-      void popup.setFocus().catch(() => {});
+      if (settings.popupFocusOnOpen) {
+        void popup.setFocus().catch(() => {});
+      }
       emitPopupState({}); // flush latest state after creation
     });
 
@@ -261,7 +267,7 @@ function App() {
     emitPopupState({ status: "Translating…", source: "", translation: "" });
 
     return popup;
-  }, [emitPopupState]);
+  }, [emitPopupState, settings.popupFocusOnOpen]);
 
   const handleHotkey = useCallback(async () => {
     const now = Date.now();
@@ -591,6 +597,15 @@ function App() {
             value={settings.hotkey}
             onChange={(e) => setSettings((s) => ({ ...s, hotkey: e.target.value }))}
             style={{ width: 280 }}
+          />
+        </label>
+
+        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          Popup focus on open
+          <input
+            type="checkbox"
+            checked={settings.popupFocusOnOpen}
+            onChange={(e) => setSettings((s) => ({ ...s, popupFocusOnOpen: e.target.checked }))}
           />
         </label>
 

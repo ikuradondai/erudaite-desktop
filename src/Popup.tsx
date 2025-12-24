@@ -11,6 +11,7 @@ type PopupState = {
 export default function Popup() {
   const [state, setState] = useState<PopupState>({ status: "Translating…", translation: "" });
   const hasFocusedRef = useRef(false);
+  const [isFocused, setIsFocused] = useState(true);
 
   const closeSelf = (_reason: string) => {
     const w = getCurrentWebviewWindow();
@@ -70,6 +71,7 @@ export default function Popup() {
     // Guard: only close on blur after we have successfully received focus at least once.
     const w = getCurrentWebviewWindow();
     const unsubPromise = w.onFocusChanged(({ payload }) => {
+      setIsFocused(payload === true);
       if (payload === true) {
         hasFocusedRef.current = true;
         return;
@@ -83,6 +85,10 @@ export default function Popup() {
     };
   }, []);
 
+  const chrome = isFocused
+    ? { border: "1px solid rgba(0,0,0,0.35)", opacity: 1 }
+    : { border: "1px solid rgba(0,0,0,0.14)", opacity: 0.9 };
+
   return (
     <div
       style={{
@@ -93,11 +99,34 @@ export default function Popup() {
         background: "#ffffff",
         borderRadius: 0,
         boxShadow: "none",
-        border: "none",
+        border: chrome.border,
+        opacity: chrome.opacity,
         overflow: "auto",
         userSelect: "text",
+        position: "relative",
       }}
     >
+      <button
+        onClick={() => closeSelf("button")}
+        aria-label="Close"
+        title="Close"
+        style={{
+          position: "absolute",
+          top: 6,
+          right: 6,
+          width: 22,
+          height: 22,
+          padding: 0,
+          borderRadius: 6,
+          border: "1px solid rgba(0,0,0,0.18)",
+          background: "rgba(255,255,255,0.9)",
+          cursor: "pointer",
+          lineHeight: "20px",
+          fontSize: 14,
+        }}
+      >
+        ×
+      </button>
       <div style={{ fontSize: 13, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
         {state.translation || ""}
       </div>
