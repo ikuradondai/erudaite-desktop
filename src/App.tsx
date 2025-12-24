@@ -132,7 +132,15 @@ function App() {
   );
 
   const closePopupIfOpen = useCallback(async () => {
-    const w = popupRef.current ?? (await WebviewWindow.getByLabel("popup"));
+    let w: WebviewWindow | null = popupRef.current;
+    if (!w) {
+      try {
+        w = await WebviewWindow.getByLabel("popup");
+      } catch (e) {
+        agentLog("closePopupIfOpen getByLabel threw", { err: e instanceof Error ? e.message : String(e) });
+        return false;
+      }
+    }
     if (!w) return false;
     try {
       const vis = await w.isVisible();
@@ -153,7 +161,15 @@ function App() {
 
   const ensurePopupAtCursor = useCallback(async () => {
     // If already open, just move + focus
-    const existing = popupRef.current ?? (await WebviewWindow.getByLabel("popup"));
+    let existing: WebviewWindow | null = popupRef.current;
+    if (!existing) {
+      try {
+        existing = await WebviewWindow.getByLabel("popup");
+      } catch (e) {
+        agentLog("ensurePopupAtCursor getByLabel threw", { err: e instanceof Error ? e.message : String(e) });
+        existing = null;
+      }
+    }
     if (existing) {
       popupRef.current = existing;
       try {
@@ -210,6 +226,8 @@ function App() {
       ? `${window.location.origin}/#/popup`
       : "index.html#/popup";
 
+    agentLog("ensurePopupAtCursor create", { popupUrl, x, y, w: initialW, h: initialH });
+
     const popup = new WebviewWindow("popup", {
       url: popupUrl,
       width: initialW,
@@ -249,12 +267,21 @@ function App() {
     agentLog("hotkey start", { hasPopupRef: !!popupRef.current });
 
     // Toggle behavior: if popup is open, close it and stop.
-    if (await closePopupIfOpen()) {
+    let closed = false;
+    try {
+      closed = await closePopupIfOpen();
+      agentLog("closePopupIfOpen result", { closed });
+    } catch (e) {
+      agentLog("closePopupIfOpen threw", { err: e instanceof Error ? e.message : String(e) });
+      closed = false;
+    }
+    if (closed) {
       agentLog("hotkey short-circuit by closePopupIfOpen", {});
       return;
     }
 
     if (hotkeyInFlightRef.current) {
+      agentLog("hotkey ignored (in-flight)", {});
       return;
     }
 
