@@ -1,6 +1,5 @@
 use serde::Serialize;
 use tauri::ipc::Channel;
-use std::io::Write;
 use std::hash::{Hash, Hasher};
 #[cfg(windows)]
 use windows_sys::Win32::Foundation::POINT;
@@ -9,28 +8,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
 #[cfg(target_os = "macos")]
 use core_graphics::event::CGEvent;
 
-// #region agent log
-fn agent_log(hypothesis_id: &str, message: &str, data: serde_json::Value) {
-  let path = r"c:\Users\kuran\OneDrive\Desktop\App_dev\.cursor\debug.log";
-  if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-    let v = serde_json::json!({
-      "sessionId": "debug-session",
-      "runId": "pre-fix",
-      "hypothesisId": hypothesis_id,
-      "location": "desktop/src-tauri/src/commands.rs",
-      "message": message,
-      "data": data,
-      "timestamp": std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0)
-    });
-    let _ = writeln!(f, "{}", v.to_string());
-    // Also print to stdout so we can see logs even if file writing is blocked.
-    println!("[ERUDAITE_DEBUG] {}", v.to_string());
-  }
+fn agent_log(_hypothesis_id: &str, _message: &str, _data: serde_json::Value) {
+  // (debug logging removed)
 }
-// #endregion
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "type")]
@@ -97,12 +77,7 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
 
   let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("clipboard init failed: {e}"))?;
   let prev_text = clipboard.get_text().ok();
-  // #region agent log
-  agent_log("H4", "capture_selected_text entry", serde_json::json!({
-    "timeoutMs": timeout_ms,
-    "prevLen": prev_text.as_ref().map(|s| s.trim().len()).unwrap_or(0)
-  }));
-  // #endregion
+  agent_log("H4", "capture_selected_text entry", serde_json::json!({}));
 
   // Give the user time to release the hotkey modifiers (e.g. Alt) so that Ctrl+C isn't affected.
   std::thread::sleep(std::time::Duration::from_millis(180));
@@ -130,11 +105,7 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
       std::thread::sleep(std::time::Duration::from_millis(20));
     }
   }
-  // #region agent log
-  agent_log("H5", "sentinel set", serde_json::json!({
-    "sentinelObserved": sentinel_observed
-  }));
-  // #endregion
+  agent_log("H5", "sentinel set", serde_json::json!({ "observed": sentinel_observed }));
 
   // simulate copy
   #[cfg(target_os = "windows")]
@@ -152,9 +123,7 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
     let _ = enigo.key(Key::Control, Press);
     let _ = enigo.key(Key::Unicode('c'), Click);
     let _ = enigo.key(Key::Control, Release);
-    // #region agent log
     agent_log("H9", "copy attempt 1 sent (Ctrl+C)", serde_json::json!({}));
-    // #endregion
   }
   #[cfg(target_os = "macos")]
   {
@@ -174,32 +143,7 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
   {
     // no-op
   }
-  // #region agent log
-  {
-    let sample = clipboard.get_text().ok().map(|s| s.trim().to_string());
-    let kind = match &sample {
-      None => "none",
-      Some(s) if s.is_empty() => "empty",
-      Some(s) if *s == sentinel => "sentinel",
-      Some(s) if s.contains("__ERUDAITE_SENTINEL__") => "sentinel_like",
-      Some(s) => {
-        if let Some(prev) = &prev_text {
-          if prev.trim() == s {
-            "prev"
-          } else {
-            "other"
-          }
-        } else {
-          "other"
-        }
-      }
-    };
-    agent_log("H8", "after key simulation clipboard sample", serde_json::json!({
-      "kind": kind,
-      "len": sample.as_ref().map(|x| x.len()).unwrap_or(0)
-    }));
-  }
-  // #endregion
+  agent_log("H8", "after key simulation clipboard sample", serde_json::json!({}));
 
   // poll clipboard for updated selection
   let started = std::time::Instant::now();
@@ -251,33 +195,9 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
               let _ = enigo.key(Key::Control, Press);
               let _ = enigo.key(Key::Unicode('c'), Click);
               let _ = enigo.key(Key::Control, Release);
-              // #region agent log
-              agent_log("H9", "copy attempt 2/3 sent (Ctrl+Insert, Esc+Ctrl+C)", serde_json::json!({ "pollsAt": polls }));
-              // #endregion
-              // #region agent log
-              let sample2 = clipboard.get_text().ok().map(|s| s.trim().to_string());
-              let kind2 = match &sample2 {
-                None => "none",
-                Some(s) if s.is_empty() => "empty",
-                Some(s) if *s == sentinel => "sentinel",
-                Some(s) if s.contains("__ERUDAITE_SENTINEL__") => "sentinel_like",
-                Some(s) => {
-                  if let Some(prev) = &prev_text {
-                    if prev.trim() == s { "prev" } else { "other" }
-                  } else {
-                    "other"
-                  }
-                }
-              };
-              agent_log("H8", "after retry attempts clipboard sample", serde_json::json!({
-                "kind": kind2,
-                "len": sample2.as_ref().map(|x| x.len()).unwrap_or(0)
-              }));
-              // #endregion
+              agent_log("H9", "copy attempt 2/3 sent (Ctrl+Insert, Esc+Ctrl+C)", serde_json::json!({}));
             } else {
-              // #region agent log
               agent_log("H9", "alt copy attempts skipped (enigo init failed)", serde_json::json!({ "pollsAt": polls }));
-              // #endregion
             }
           }
         }
@@ -299,36 +219,7 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
     let _ = clipboard.set_text(prev);
   }
 
-  // #region agent log
-  agent_log("H6", "capture_selected_text exit", serde_json::json!({
-    "polls": polls,
-    "pickedLen": picked.as_ref().map(|s| s.len()).unwrap_or(0),
-    "lastKind": last_kind
-  }));
-  // #endregion
-
-  // #region agent log
-  if let Some(p) = &picked {
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    p.hash(&mut h);
-    let hash64 = h.finish();
-    agent_log("H10", "picked summary", serde_json::json!({
-      "bytes": p.len(),
-      "chars": p.chars().count(),
-      "isAscii": p.is_ascii(),
-      "hasNewline": p.contains('\n'),
-      "hash64": format!("{:016x}", hash64)
-    }));
-  } else {
-    agent_log("H10", "picked summary", serde_json::json!({
-      "bytes": 0,
-      "chars": 0,
-      "isAscii": null,
-      "hasNewline": null,
-      "hash64": null
-    }));
-  }
-  // #endregion
+  agent_log("H6", "capture_selected_text exit", serde_json::json!({ "polls": polls, "lastKind": last_kind }));
 
   Ok(picked.unwrap_or_default())
 }

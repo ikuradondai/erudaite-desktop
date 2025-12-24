@@ -46,23 +46,9 @@ const DEFAULT_SETTINGS: Settings = {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const FALLBACK_HOTKEY = "CommandOrControl+Shift+Alt+Q";
 
-// #region agent log
-function agentLog(hypothesisId: string, message: string, data: Record<string, unknown>) {
-  fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "debug-session",
-      runId: "pre-fix",
-      hypothesisId,
-      location: "desktop/src/App.tsx",
-      message,
-      data,
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
+function agentLog(): void {
+  // (debug logging removed)
 }
-// #endregion
 
 function App() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
