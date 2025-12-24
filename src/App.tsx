@@ -206,7 +206,7 @@ function App() {
       skipTaskbar: true,
       focus: true,
       visible: true,
-      shadow: false,
+      shadow: true,
     });
     popupRef.current = popup;
 
