@@ -11,45 +11,20 @@ export default function Popup() {
   const [state, setState] = useState<PopupState>({ status: "Translating…", translation: "" });
   const hasFocusedRef = useRef(false);
 
-  // #region agent log
-  function agentLog(message: string, data: Record<string, unknown>) {
-    fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: "debug-session",
-        runId: "popup-close",
-        hypothesisId: "C1",
-        location: "desktop/src/Popup.tsx",
-        message,
-        data,
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-  }
-  // #endregion
-
-  const closeSelf = (reason: string) => {
+  const closeSelf = (_reason: string) => {
     const w = getCurrentWebviewWindow();
-    agentLog("closeSelf called", { reason, label: w.label });
     w.close()
-      .then(() => agentLog("closeSelf close() resolved", { reason }))
       .catch((e) => {
-        agentLog("closeSelf close() rejected", { reason, err: e instanceof Error ? e.message : String(e) });
         // Fallback: hide (in case close is blocked by permissions/policy)
         w.hide()
-          .then(() => agentLog("closeSelf hide() resolved", { reason }))
-          .catch((e2) =>
-            agentLog("closeSelf hide() rejected", { reason, err: e2 instanceof Error ? e2.message : String(e2) }),
-          );
+          .catch(() => {});
       });
   };
 
   useEffect(() => {
     const w = getCurrentWebviewWindow();
-    agentLog("mounted", { label: w.label });
-    const unlistenDestroyedP = w.listen("tauri://destroyed", () => agentLog("tauri destroyed", {}));
-    const unlistenCloseReqP = w.listen("tauri://close-requested", () => agentLog("tauri close-requested", {}));
+    const unlistenDestroyedP = w.listen("tauri://destroyed", () => {});
+    const unlistenCloseReqP = w.listen("tauri://close-requested", () => {});
     void emit("erudaite://popup/ready", { label: getCurrentWebviewWindow().label }).catch(() => {});
     const unlistenPromise = listen<PopupState>("erudaite://popup/state", (e) => {
       setState((s) => ({ ...s, ...e.payload }));
@@ -63,12 +38,10 @@ export default function Popup() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      agentLog("keydown", { key: e.key });
       // Some platforms don't emit focusChanged(true) reliably.
       // If we receive any key events, the popup is effectively focused.
       hasFocusedRef.current = true;
       if (e.key === "Escape") {
-        agentLog("close via esc", {});
         closeSelf("esc");
       }
     };
@@ -90,13 +63,11 @@ export default function Popup() {
     // Guard: only close on blur after we have successfully received focus at least once.
     const w = getCurrentWebviewWindow();
     const unsubPromise = w.onFocusChanged(({ payload }) => {
-      agentLog("focusChanged", { focused: payload, hasFocused: hasFocusedRef.current });
       if (payload === true) {
         hasFocusedRef.current = true;
         return;
       }
       if (payload === false && hasFocusedRef.current) {
-        agentLog("close via blur", {});
         closeSelf("blur");
       }
     });
