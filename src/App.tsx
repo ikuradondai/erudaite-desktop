@@ -46,7 +46,23 @@ const DEFAULT_SETTINGS: Settings = {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const FALLBACK_HOTKEY = "CommandOrControl+Shift+Alt+Q";
 
-// (debug logging removed)
+// #region agent log
+function agentLog(message: string, data: Record<string, unknown>) {
+  fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionId: "debug-session",
+      runId: "popup-close",
+      hypothesisId: "C2",
+      location: "desktop/src/App.tsx",
+      message,
+      data,
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
 
 function App() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -170,6 +186,8 @@ function App() {
     const popupUrl = window.location.protocol.startsWith("http")
       ? `${window.location.origin}/#/popup`
       : "index.html#/popup";
+
+    agentLog("create popup", { popupUrl, x, y, width: initialW, height: initialH });
 
     const popup = new WebviewWindow("popup", {
       url: popupUrl,
