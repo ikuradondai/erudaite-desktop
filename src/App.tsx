@@ -166,6 +166,7 @@ function App() {
   const [targetLang, setTargetLang] = useState<string>(""); // computed per strategy; shown in UI
   const [showWizard, setShowWizard] = useState<boolean>(false);
   const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [showAutoRouteHelp, setShowAutoRouteHelp] = useState<boolean>(false);
   const hotkeyInFlightRef = useRef(false);
   const lastHotkeyAtRef = useRef(0);
   const translationRunIdRef = useRef(0);
@@ -185,6 +186,18 @@ function App() {
       }),
     [],
   );
+
+  // Close help pop when clicking outside (settings panel)
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (t.closest?.(".help")) return;
+      setShowAutoRouteHelp(false);
+    };
+    window.addEventListener("mousedown", onDown, { capture: true });
+    return () => window.removeEventListener("mousedown", onDown, { capture: true } as any);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -678,6 +691,10 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.hotkey, handleHotkey]);
 
+  const isAutoRouting = settings.routingStrategy === "defaultBased";
+  const activeLabelColor = "#374151";
+  const inactiveLabelColor = "#9ca3af";
+
   // Status badge styling
   const statusBadgeClass = status.toLowerCase().includes("error")
     ? "status-badge error"
@@ -791,20 +808,41 @@ function App() {
               <span>ポップアップを自動フォーカス</span>
             </label>
 
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={settings.routingStrategy === "defaultBased"}
-                onChange={(e) =>
-                  setSettings((s) => ({
-                    ...s,
-                    routingStrategy: e.target.checked ? "defaultBased" : "alwaysFixed",
-                  }))
-                }
-                style={{ width: 16, height: 16 }}
-              />
-              <span>自動ルーティング（言語検出）</span>
-            </label>
+            <div className="help">
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={isAutoRouting}
+                  onChange={(e) =>
+                    setSettings((s) => ({
+                      ...s,
+                      routingStrategy: e.target.checked ? "defaultBased" : "alwaysFixed",
+                    }))
+                  }
+                  style={{ width: 16, height: 16 }}
+                />
+                <span>自動ルーティング（言語検出）</span>
+              </label>
+              <button
+                type="button"
+                className="help-btn"
+                aria-label="自動ルーティングの説明"
+                onClick={() => setShowAutoRouteHelp((v) => !v)}
+              >
+                ?
+              </button>
+              {showAutoRouteHelp && (
+                <div className="help-pop">
+                  <div style={{ fontWeight: 600, marginBottom: 6 }}>自動ルーティングとは？</div>
+                  <div style={{ marginBottom: 6 }}>
+                    ONにすると、原文が<strong>母国語</strong>なら<strong>よく使う言語</strong>へ、母国語以外なら<strong>母国語</strong>へ翻訳します。
+                  </div>
+                  <div style={{ color: "#6b7280" }}>
+                    ※ ONのときは「強制翻訳先言語」は使いません（固定先ではなく自動決定）。
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
@@ -823,7 +861,9 @@ function App() {
 
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-              <span style={{ fontWeight: 500, color: "#374151" }}>母国語</span>
+              <span style={{ fontWeight: 500, color: isAutoRouting ? activeLabelColor : inactiveLabelColor }}>
+                母国語
+              </span>
               <select
                 className="input"
                 value={settings.defaultLanguage}
@@ -837,7 +877,9 @@ function App() {
             </label>
 
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-              <span style={{ fontWeight: 500, color: "#374151" }}>よく使う言語</span>
+              <span style={{ fontWeight: 500, color: isAutoRouting ? activeLabelColor : inactiveLabelColor }}>
+                よく使う言語
+              </span>
               <select
                 className="input"
                 value={settings.secondaryLanguage}
@@ -851,7 +893,9 @@ function App() {
             </label>
 
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-              <span style={{ fontWeight: 500, color: "#374151" }}>翻訳先言語</span>
+              <span style={{ fontWeight: 500, color: isAutoRouting ? inactiveLabelColor : activeLabelColor }}>
+                強制翻訳先言語
+              </span>
               <select
                 className="input"
                 value={
@@ -859,7 +903,7 @@ function App() {
                     ? settings.fixedTargetLang ?? ""
                     : targetLang || settings.lastUsedTargetLang || ""
                 }
-                disabled={settings.routingStrategy === "defaultBased"}
+                disabled={isAutoRouting}
                 onChange={(e) => {
                   const v = e.target.value;
                   if (settings.routingStrategy === "alwaysFixed") {

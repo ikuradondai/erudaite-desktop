@@ -167,6 +167,46 @@ body.popup #root {
   border-color: #bfdbfe;
 }
 
+/* ====== Help tooltip ====== */
+.help {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.help-btn {
+  margin-left: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+}
+.help-btn:hover {
+  border-color: #9ca3af;
+  color: #374151;
+}
+.help-pop {
+  position: absolute;
+  top: 22px;
+  left: 0;
+  z-index: 50;
+  width: 320px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+  color: #374151;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* ====== Popup animation ====== */
 @keyframes popup-enter {
   0% {
