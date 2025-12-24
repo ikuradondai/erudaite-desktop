@@ -33,25 +33,27 @@ export default function Popup() {
   const closeSelf = (reason: string) => {
     const w = getCurrentWebviewWindow();
     agentLog("closeSelf called", { reason, label: w.label });
+    // IMPORTANT: `close()` can resolve even if the window stays visible (close-request accepted but not applied).
+    // To guarantee UX, hide first (disappear), then close/destroy for cleanup.
+    w.hide()
+      .then(async () => {
+        const vis = await getCurrentWindow().isVisible().catch(() => null);
+        agentLog("hide() resolved", { reason, visibleAfter: vis });
+      })
+      .catch((e) => agentLog("hide() rejected", { reason, err: e instanceof Error ? e.message : String(e) }));
+
     w.close()
       .then(async () => {
-        let vis: boolean | null = null;
-        try {
-          vis = await getCurrentWindow().isVisible();
-        } catch {
-          // ignore
-        }
+        const vis = await getCurrentWindow().isVisible().catch(() => null);
         agentLog("close() resolved", { reason, visibleAfter: vis });
       })
       .catch(async (e) => {
         agentLog("close() rejected", { reason, err: e instanceof Error ? e.message : String(e) });
-        // Fallback: hide (in case close is blocked by permissions/policy)
         try {
-          await w.hide();
-          const vis = await getCurrentWindow().isVisible().catch(() => null);
-          agentLog("hide() resolved", { reason, visibleAfter: vis });
+          await getCurrentWindow().destroy();
+          agentLog("destroy() resolved", { reason });
         } catch (e2) {
-          agentLog("hide() rejected", { reason, err: e2 instanceof Error ? e2.message : String(e2) });
+          agentLog("destroy() rejected", { reason, err: e2 instanceof Error ? e2.message : String(e2) });
         }
       });
   };

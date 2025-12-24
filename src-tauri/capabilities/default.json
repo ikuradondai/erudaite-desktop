@@ -11,6 +11,7 @@
     "core:webview:allow-create-webview-window",
     "core:window:allow-close",
     "core:window:allow-hide",
+    "core:window:allow-destroy",
     "clipboard-manager:default",
     "global-shortcut:default",
     "global-shortcut:allow-register",
