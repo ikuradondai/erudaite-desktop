@@ -9,42 +9,6 @@ import { PhysicalSize } from "@tauri-apps/api/dpi";
 import { monitorFromPoint } from "@tauri-apps/api/window";
 import "./App.css";
 
-// #region agent log helpers
-const __agentLog = (hypothesisId: string, location: string, message: string, data: Record<string, unknown>) => {
-  fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "debug-session",
-      runId: "lang-routing-pre-fix",
-      hypothesisId,
-      location,
-      message,
-      data,
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-};
-// #endregion
-
-// Avoid logging raw text (may contain PII). Only log a script summary.
-const __scriptSummary = (s: string) => {
-  const text = s || "";
-  const len = text.length;
-  let latin = 0;
-  let kana = 0;
-  let han = 0;
-  let hangul = 0;
-  for (const ch of text) {
-    const code = ch.charCodeAt(0);
-    if (code <= 0x007a && code >= 0x0041) latin += 1;
-    else if (code >= 0x3040 && code <= 0x30ff) kana += 1;
-    else if (code >= 0x4e00 && code <= 0x9fff) han += 1;
-    else if (code >= 0xac00 && code <= 0xd7af) hangul += 1;
-  }
-  return { len, latin, kana, han, hangul };
-};
-
 type ClipboardMode = "displayOnly" | "displayAndCopy" | "copyOnly";
 
 type RoutingStrategy = "defaultBased" | "alwaysLastUsed" | "alwaysFixed";
@@ -354,29 +318,16 @@ function App() {
 
   const closePopupIfOpen = useCallback(async () => {
     let w: WebviewWindow | null = popupRef.current;
-    // #region agent log (H8)
-    __agentLog("H8", "desktop/src/App.tsx:closePopupIfOpen", "enter", {
-      hasRef: Boolean(w),
-    });
-    // #endregion
     if (!w) {
       try {
         w = await WebviewWindow.getByLabel("popup");
       } catch (e) {
-        // #region agent log (H8)
-        __agentLog("H8", "desktop/src/App.tsx:closePopupIfOpen", "getByLabel failed", {
-          err: e instanceof Error ? e.message : String(e),
-        });
-        // #endregion
         return false;
       }
     }
     if (!w) return false;
     try {
       const vis = await w.isVisible();
-      // #region agent log (H8)
-      __agentLog("H8", "desktop/src/App.tsx:closePopupIfOpen", "isVisible", { vis });
-      // #endregion
       // Only treat as "open" if it's actually visible. Hidden/closed windows should NOT short-circuit hotkey.
       if (!vis) {
         popupRef.current = null;
@@ -388,9 +339,6 @@ function App() {
     try {
       // Force-destroy to avoid leaving a hidden zombie window with the same label.
       await w.destroy();
-      // #region agent log (H8)
-      __agentLog("H8", "desktop/src/App.tsx:closePopupIfOpen", "destroyed", {});
-      // #endregion
     } catch {
       // ignore
     }
@@ -399,12 +347,6 @@ function App() {
   }, []);
 
   const ensurePopupAtCursor = useCallback(async () => {
-    // #region agent log (H9)
-    __agentLog("H9", "desktop/src/App.tsx:ensurePopupAtCursor", "enter", {
-      hasRef: Boolean(popupRef.current),
-      focusOnOpen: settings.popupFocusOnOpen,
-    });
-    // #endregion
     // If already open, just move + focus
     let existing: WebviewWindow | null = popupRef.current;
     if (!existing) {
@@ -418,9 +360,6 @@ function App() {
       popupRef.current = existing;
       try {
         const vis = await existing.isVisible();
-        // #region agent log (H9)
-        __agentLog("H9", "desktop/src/App.tsx:ensurePopupAtCursor", "existing isVisible", { vis });
-        // #endregion
         if (!vis) {
           // A hidden/stale window with the same label can stick around and refuse to show.
           try {
@@ -439,9 +378,6 @@ function App() {
           // NOTE: show() may focus on some platforms; we log to verify.
           await existing.show();
           if (settings.popupFocusOnOpen) await existing.setFocus();
-          // #region agent log (H9)
-          __agentLog("H9", "desktop/src/App.tsx:ensurePopupAtCursor", "existing show/setFocus ok", {});
-          // #endregion
           try {
             const vis2 = await existing.isVisible();
             if (!vis2) {
@@ -454,11 +390,6 @@ function App() {
           }
         } catch (e) {
           void e;
-          // #region agent log (H9)
-          __agentLog("H9", "desktop/src/App.tsx:ensurePopupAtCursor", "existing show failed", {
-            err: e instanceof Error ? e.message : String(e),
-          });
-          // #endregion
           try {
             await existing.destroy();
           } catch (e2) {
@@ -552,20 +483,11 @@ function App() {
   const handleHotkey = useCallback(async () => {
     const now = Date.now();
     lastHotkeyAtRef.current = now;
-    // #region agent log (H10)
-    __agentLog("H10", "desktop/src/App.tsx:handleHotkey", "enter", {
-      now,
-      inFlight: hotkeyInFlightRef.current,
-    });
-    // #endregion
 
     // If a translation/capture is already in flight, ignore hotkey re-press.
     // Otherwise, the "toggle close popup" behavior can destroy the popup mid-translation,
     // making it look like nothing happened.
     if (hotkeyInFlightRef.current) {
-      // #region agent log (H10)
-      __agentLog("H10", "desktop/src/App.tsx:handleHotkey", "ignore: inFlight before toggle-close", {});
-      // #endregion
       return;
     }
 
@@ -577,9 +499,6 @@ function App() {
       void e;
       closed = false;
     }
-    // #region agent log (H10)
-    __agentLog("H10", "desktop/src/App.tsx:handleHotkey", "after closePopupIfOpen", { closed });
-    // #endregion
     if (closed) {
       return;
     }
@@ -593,15 +512,7 @@ function App() {
       try {
         // NOTE: Tauri invoke側はcamelCaseで渡す（Rustのtimeout_msにマッピングされる）
         const args = { timeoutMs: 1600 };
-        // #region agent log (H11)
-        __agentLog("H11", "desktop/src/App.tsx:capture", "invoke capture_selected_text", { args });
-        // #endregion
         picked = String(await invoke("capture_selected_text", args)).trim();
-        // #region agent log (H11)
-        __agentLog("H11", "desktop/src/App.tsx:capture", "capture_selected_text returned", {
-          pickedLen: picked.length,
-        });
-        // #endregion
       } catch (e) {
         // Do NOT fallback to clipboard here; it can silently translate stale clipboard content.
         // Instead, surface an actionable error to the user.
@@ -614,9 +525,6 @@ function App() {
         }
         const msg = e instanceof Error ? e.message : String(e);
         setStatus(`Capture failed: ${msg}`);
-        // #region agent log (H11)
-        __agentLog("H11", "desktop/src/App.tsx:capture", "capture_selected_text threw", { msg });
-        // #endregion
         setStatus("Capture failed. Keep Chrome focused, select text, then press hotkey again.");
         return;
       }
@@ -646,17 +554,6 @@ function App() {
         return;
       }
 
-      // #region agent log (H1/H2/H3)
-      __agentLog("H1", "desktop/src/App.tsx:handleHotkey", "picked text + settings snapshot", {
-        pickedLen: picked.length,
-        routingStrategy: settings.routingStrategy,
-        defaultLanguage: settings.defaultLanguage,
-        secondaryLanguage: settings.secondaryLanguage,
-        lastUsedTargetLang: settings.lastUsedTargetLang,
-        apiBaseUrl: settings.apiBaseUrl,
-      });
-      // #endregion
-
       // Show popup near cursor immediately
       await ensurePopupAtCursor();
       emitPopupState({ status: "Translating…", source: picked, translation: "" });
@@ -672,16 +569,6 @@ function App() {
       const runTranslate = (target: string) => {
         const runId = ++translationRunIdRef.current;
         let full = "";
-
-        // #region agent log (H1/H2/H3)
-        __agentLog("H2", "desktop/src/App.tsx:runTranslate", "starting translate_sse", {
-          runId,
-          target,
-          routingStrategy: settings.routingStrategy,
-          defaultLanguage: settings.defaultLanguage,
-          secondaryLanguage: settings.secondaryLanguage,
-        });
-        // #endregion
 
         setTargetLang(target);
         setTranslatedText("");
@@ -699,15 +586,6 @@ function App() {
             setTranslatedText(full);
             emitPopupState({ status: "Translating…", translation: full });
 
-            if (full.length === msg.content.length) {
-              // first delta only
-              __agentLog("H7", "desktop/src/App.tsx:channel", "first translation delta script summary", {
-                runId,
-                target,
-                summary: __scriptSummary(full),
-              });
-            }
-
             // Resize popup loosely based on content length (best effort)
             const lines = full.split(/\r?\n/).length;
             const h = Math.min(300, Math.max(150, 140 + Math.min(8, lines) * 18));
@@ -717,12 +595,6 @@ function App() {
           } else if (msg.type === "error") {
             setStatus(`Error: ${msg.message}`);
             emitPopupState({ status: `Error: ${msg.message}` });
-          } else if (msg.type === "done") {
-            __agentLog("H7", "desktop/src/App.tsx:channel", "translation done script summary", {
-              runId,
-              target,
-              summary: __scriptSummary(full),
-            });
           }
         };
 
@@ -762,13 +634,6 @@ function App() {
           } catch {
             // ignore
           }
-          // #region agent log (H1)
-          __agentLog("H1", "desktop/src/App.tsx:detect_language", "detect_language result (alwaysFixed)", {
-            detectedForUi,
-            defaultLanguage: settings.defaultLanguage,
-            secondaryLanguage: settings.secondaryLanguage,
-          });
-          // #endregion
           setDetectedLang(detectedForUi);
         })();
       } else if (settings.routingStrategy === "alwaysLastUsed") {
@@ -794,16 +659,6 @@ function App() {
             ? settings.secondaryLanguage
             : settings.defaultLanguage;
 
-        // #region agent log (H4)
-        __agentLog("H4", "desktop/src/App.tsx:defaultBased", "heuristic decision", {
-          kind,
-          heuristicDetected,
-          target0,
-          defaultLanguage: settings.defaultLanguage,
-          secondaryLanguage: settings.secondaryLanguage,
-        });
-        // #endregion
-
         active = runTranslate(target0);
 
         // detect_language in parallel; potentially restart.
@@ -815,27 +670,10 @@ function App() {
         } catch {
           detectedForUi = heuristicDetected ?? "Unknown";
         }
-        // #region agent log (H1)
-        __agentLog("H1", "desktop/src/App.tsx:detect_language", "detect_language result (defaultBased)", {
-          detectedForUi,
-          defaultLanguage: settings.defaultLanguage,
-          secondaryLanguage: settings.secondaryLanguage,
-          target0,
-        });
-        // #endregion
         setDetectedLang(detectedForUi);
 
         if (detectedForUi !== "Unknown") {
           const targetReal = computeTargetDefaultBased(detectedForUi);
-          // #region agent log (H1)
-          __agentLog("H1", "desktop/src/App.tsx:defaultBased", "targetReal computed", {
-            detectedForUi,
-            targetReal,
-            defaultLanguage: settings.defaultLanguage,
-            secondaryLanguage: settings.secondaryLanguage,
-            activeTargetBefore: active.target,
-          });
-          // #endregion
           if (targetReal !== active.target) {
             active = runTranslate(targetReal);
           }
