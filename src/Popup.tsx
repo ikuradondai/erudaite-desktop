@@ -15,6 +15,7 @@ export default function Popup() {
     const w = getCurrentWebviewWindow();
     w.close()
       .catch((e) => {
+        void e;
         // Fallback: hide (in case close is blocked by permissions/policy)
         w.hide()
           .catch(() => {});
