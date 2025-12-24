@@ -1,6 +1,8 @@
 use serde::Serialize;
 use tauri::ipc::Channel;
 // (no hashing needed)
+use std::io::Write;
+use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(windows)]
 use windows_sys::Win32::Foundation::POINT;
 #[cfg(windows)]
@@ -9,7 +11,27 @@ use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
 use core_graphics::event::CGEvent;
 
 fn agent_log(_hypothesis_id: &str, _message: &str, _data: serde_json::Value) {
-  // (debug logging removed)
+  // #region agent log
+  // Debug-only instrumentation: append NDJSON to the session log file.
+  // Do NOT log the raw text (may contain PII).
+  let ts = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .map(|d| d.as_millis() as i64)
+    .unwrap_or(0);
+  let payload = serde_json::json!({
+    "sessionId": "debug-session",
+    "runId": "lang-routing-pre-fix",
+    "hypothesisId": _hypothesis_id,
+    "location": "desktop/src-tauri/src/commands.rs",
+    "message": _message,
+    "data": _data,
+    "timestamp": ts
+  });
+  let log_path = r"C:\Users\kuran\OneDrive\Desktop\App_dev\.cursor\debug.log";
+  if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(log_path) {
+    let _ = writeln!(f, "{}", payload.to_string());
+  }
+  // #endregion
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -265,6 +287,18 @@ pub async fn translate_sse(
   is_reverse: Option<bool>,
   on_event: Channel<StreamEvent>,
 ) -> Result<(), String> {
+  agent_log(
+    "H6",
+    "translate_sse called",
+    serde_json::json!({
+      "base_url": base_url,
+      "target_lang": target_lang,
+      "mode": mode,
+      "explanation_lang": explanation_lang,
+      "is_reverse": is_reverse.unwrap_or(false),
+      "text_len": text.chars().count()
+    }),
+  );
   let base = normalize_base_url(&base_url);
   let url = format!("{}/api/translate", base);
 

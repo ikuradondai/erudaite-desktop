@@ -27,6 +27,24 @@ const __agentLog = (hypothesisId: string, location: string, message: string, dat
 };
 // #endregion
 
+// Avoid logging raw text (may contain PII). Only log a script summary.
+const __scriptSummary = (s: string) => {
+  const text = s || "";
+  const len = text.length;
+  let latin = 0;
+  let kana = 0;
+  let han = 0;
+  let hangul = 0;
+  for (const ch of text) {
+    const code = ch.charCodeAt(0);
+    if (code <= 0x007a && code >= 0x0041) latin += 1;
+    else if (code >= 0x3040 && code <= 0x30ff) kana += 1;
+    else if (code >= 0x4e00 && code <= 0x9fff) han += 1;
+    else if (code >= 0xac00 && code <= 0xd7af) hangul += 1;
+  }
+  return { len, latin, kana, han, hangul };
+};
+
 type ClipboardMode = "displayOnly" | "displayAndCopy" | "copyOnly";
 
 type RoutingStrategy = "defaultBased" | "alwaysLastUsed" | "alwaysFixed";
@@ -614,6 +632,15 @@ function App() {
             setTranslatedText(full);
             emitPopupState({ status: "Translating…", translation: full });
 
+            if (full.length === msg.content.length) {
+              // first delta only
+              __agentLog("H7", "desktop/src/App.tsx:channel", "first translation delta script summary", {
+                runId,
+                target,
+                summary: __scriptSummary(full),
+              });
+            }
+
             // Resize popup loosely based on content length (best effort)
             const lines = full.split(/\r?\n/).length;
             const h = Math.min(300, Math.max(150, 140 + Math.min(8, lines) * 18));
@@ -623,6 +650,12 @@ function App() {
           } else if (msg.type === "error") {
             setStatus(`Error: ${msg.message}`);
             emitPopupState({ status: `Error: ${msg.message}` });
+          } else if (msg.type === "done") {
+            __agentLog("H7", "desktop/src/App.tsx:channel", "translation done script summary", {
+              runId,
+              target,
+              summary: __scriptSummary(full),
+            });
           }
         };
 
