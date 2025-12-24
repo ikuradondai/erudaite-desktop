@@ -27,6 +27,79 @@ type Settings = {
   favoritePairs?: Array<{ from: string; to: string }>;
 };
 
+// デフォルト言語として選択可能な6言語
+const DEFAULT_LANGUAGES = [
+  "日本語",
+  "英語（アメリカ）",
+  "繁体字中国語",
+  "簡体字中国語",
+  "韓国語",
+  "インドネシア語",
+];
+
+// ターゲット言語として選択可能な59言語
+const ALL_LANGUAGES = [
+  "日本語",
+  "英語（アメリカ）",
+  "英語（イギリス）",
+  "韓国語",
+  "簡体字中国語",
+  "繁体字中国語",
+  "タイ語",
+  "インドネシア語",
+  "クメール語",
+  "タガログ語",
+  "ベトナム語",
+  "標準モンゴル語",
+  "ハルハ・モンゴル語",
+  "チベット語",
+  "ゾンカ語",
+  "ヒンディー語",
+  "ウルドゥー語",
+  "タミル語",
+  "シンハラ語",
+  "ネパール語",
+  "アッサム語",
+  "アラビア語",
+  "ヘブライ語",
+  "ペルシャ語（ファルシ語）",
+  "トルコ語",
+  "スペイン語",
+  "フランス語",
+  "ドイツ語",
+  "イタリア語",
+  "オランダ語",
+  "スウェーデン語",
+  "デンマーク語",
+  "ノルウェー語",
+  "ポルトガル語（ポルトガル）",
+  "ルーマニア語",
+  "ポーランド語",
+  "チェコ語",
+  "セルビア語",
+  "クロアチア語",
+  "リトアニア語",
+  "ラトビア語",
+  "アイルランド語",
+  "ウェールズ語",
+  "フィンランド語",
+  "エストニア語",
+  "ハンガリー語",
+  "スロバキア語",
+  "ギリシャ語",
+  "スロベニア語",
+  "ブルガリア語",
+  "マケドニア語",
+  "マルタ語",
+  "ウクライナ語",
+  "ロシア語",
+  "アムハラ語",
+  "ティグリニャ語",
+  "オロモ語",
+  "ポルトガル語（ブラジル）",
+  "スペイン語（メキシコ）",
+];
+
 const DEFAULT_SETTINGS: Settings = {
   // NOTE:
   // - Use a single, consistent default across Windows/macOS to reduce confusion.
@@ -34,15 +107,15 @@ const DEFAULT_SETTINGS: Settings = {
   hotkey: "CommandOrControl+Shift+Alt+Z",
   clipboardMode: "displayOnly",
   apiBaseUrl: "https://lighting-translation.vercel.app",
-  defaultLanguage: "Japanese",
-  secondaryLanguage: "English (US)",
+  defaultLanguage: "日本語",
+  secondaryLanguage: "英語（アメリカ）",
   routingStrategy: "alwaysFixed",
   popupFocusOnOpen: true,
-  fixedTargetLang: "Japanese",
+  fixedTargetLang: "日本語",
   onboarded: false,
   favoritePairs: [
-    { from: "English (US)", to: "Japanese" },
-    { from: "Japanese", to: "English (US)" },
+    { from: "英語（アメリカ）", to: "日本語" },
+    { from: "日本語", to: "英語（アメリカ）" },
   ],
 };
 
@@ -69,10 +142,11 @@ function containsJapanese(text: string): boolean {
 
 function guessDetectedLangHeuristic(text: string, defaultLanguage: string): "default" | "not_default" | "unknown" {
   const d = defaultLanguage.toLowerCase();
-  if (d.includes("japanese")) {
+  // Handle both English and Japanese language names
+  if (d.includes("japanese") || d.includes("日本語")) {
     return containsJapanese(text) ? "default" : "not_default";
   }
-  if (d.includes("english")) {
+  if (d.includes("english") || d.includes("英語")) {
     return isMostlyAscii(text) ? "default" : "not_default";
   }
   return "unknown";
@@ -620,13 +694,13 @@ function App() {
             Welcome to ErudAite Desktop Application
           </h1>
           <p style={{ margin: "6px 0 0", fontSize: 13, color: "#6b7280" }}>
-            Press <strong style={{ color: "#4f46e5" }}>{settings.hotkey}</strong> to translate selected text
+            <strong style={{ color: "#4f46e5" }}>{settings.hotkey}</strong> で選択テキストを翻訳
           </p>
         </div>
         <button
           className="btn-icon"
           onClick={() => setShowSettings((v) => !v)}
-          title={showSettings ? "Hide settings" : "Show settings"}
+          title={showSettings ? "設定を隠す" : "設定を表示"}
         >
           ⚙️
         </button>
@@ -639,26 +713,34 @@ function App() {
             Welcome to ErudAite Desktop Application
           </div>
           <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>
-            Set your native language (Default) and a frequently-used Secondary language. Shortcut translation will route automatically.
+            母国語とよく使う言語を設定してください。ショートカット翻訳が自動でルーティングされます。
           </p>
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-              <span style={{ fontWeight: 500, color: "#374151" }}>Default Language</span>
-              <input
+              <span style={{ fontWeight: 500, color: "#374151" }}>母国語</span>
+              <select
                 className="input"
                 value={settings.defaultLanguage}
                 onChange={(e) => setSettings((s) => ({ ...s, defaultLanguage: e.target.value }))}
-                style={{ width: 160 }}
-              />
+                style={{ width: 180 }}
+              >
+                {DEFAULT_LANGUAGES.map((lang) => (
+                  <option key={lang} value={lang}>{lang}</option>
+                ))}
+              </select>
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-              <span style={{ fontWeight: 500, color: "#374151" }}>Secondary Language</span>
-              <input
+              <span style={{ fontWeight: 500, color: "#374151" }}>よく使う言語</span>
+              <select
                 className="input"
                 value={settings.secondaryLanguage}
                 onChange={(e) => setSettings((s) => ({ ...s, secondaryLanguage: e.target.value }))}
                 style={{ width: 180 }}
-              />
+              >
+                {ALL_LANGUAGES.map((lang) => (
+                  <option key={lang} value={lang}>{lang}</option>
+                ))}
+              </select>
             </label>
           </div>
           <div style={{ marginTop: 16, display: "flex", gap: 10 }}>
@@ -669,7 +751,7 @@ function App() {
                 setShowWizard(false);
               }}
             >
-              Get Started
+              はじめる
             </button>
             <button
               className="btn btn-secondary"
@@ -678,7 +760,7 @@ function App() {
                 setShowWizard(false);
               }}
             >
-              Skip
+              スキップ
             </button>
           </div>
         </div>
@@ -686,10 +768,10 @@ function App() {
 
       {/* ====== Collapsible Settings Panel ====== */}
       <div className={`settings-panel card ${showSettings ? "expanded" : "collapsed"}`} style={{ marginBottom: 20 }}>
-        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 14, color: "#374151" }}>Settings</div>
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 14, color: "#374151" }}>設定</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-            <span style={{ fontWeight: 500, color: "#374151" }}>Hotkey</span>
+            <span style={{ fontWeight: 500, color: "#374151" }}>ホットキー</span>
             <input
               className="input"
               value={settings.hotkey}
@@ -706,7 +788,7 @@ function App() {
                 onChange={(e) => setSettings((s) => ({ ...s, popupFocusOnOpen: e.target.checked }))}
                 style={{ width: 16, height: 16 }}
               />
-              <span>Focus popup on open</span>
+              <span>ポップアップを自動フォーカス</span>
             </label>
 
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
@@ -721,55 +803,63 @@ function App() {
                 }
                 style={{ width: 16, height: 16 }}
               />
-              <span>Auto route (detect language)</span>
+              <span>自動ルーティング（言語検出）</span>
             </label>
           </div>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-            <span style={{ fontWeight: 500, color: "#374151" }}>Clipboard Mode</span>
+            <span style={{ fontWeight: 500, color: "#374151" }}>クリップボード</span>
             <select
               className="input"
               value={settings.clipboardMode}
               onChange={(e) => setSettings((s) => ({ ...s, clipboardMode: e.target.value as ClipboardMode }))}
               style={{ maxWidth: 220 }}
             >
-              <option value="displayOnly">Display only</option>
-              <option value="displayAndCopy">Display + auto copy</option>
-              <option value="copyOnly">Auto copy only</option>
+              <option value="displayOnly">表示のみ</option>
+              <option value="displayAndCopy">表示＋自動コピー</option>
+              <option value="copyOnly">自動コピーのみ</option>
             </select>
           </label>
 
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-              <span style={{ fontWeight: 500, color: "#374151" }}>Default Language</span>
-              <input
+              <span style={{ fontWeight: 500, color: "#374151" }}>母国語</span>
+              <select
                 className="input"
                 value={settings.defaultLanguage}
                 onChange={(e) => setSettings((s) => ({ ...s, defaultLanguage: e.target.value }))}
-                style={{ width: 150 }}
-              />
+                style={{ width: 180 }}
+              >
+                {DEFAULT_LANGUAGES.map((lang) => (
+                  <option key={lang} value={lang}>{lang}</option>
+                ))}
+              </select>
             </label>
 
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-              <span style={{ fontWeight: 500, color: "#374151" }}>Secondary Language</span>
-              <input
+              <span style={{ fontWeight: 500, color: "#374151" }}>よく使う言語</span>
+              <select
                 className="input"
                 value={settings.secondaryLanguage}
                 onChange={(e) => setSettings((s) => ({ ...s, secondaryLanguage: e.target.value }))}
-                style={{ width: 160 }}
-              />
+                style={{ width: 180 }}
+              >
+                {ALL_LANGUAGES.map((lang) => (
+                  <option key={lang} value={lang}>{lang}</option>
+                ))}
+              </select>
             </label>
 
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-              <span style={{ fontWeight: 500, color: "#374151" }}>Target Language</span>
-              <input
+              <span style={{ fontWeight: 500, color: "#374151" }}>翻訳先言語</span>
+              <select
                 className="input"
                 value={
                   settings.routingStrategy === "alwaysFixed"
                     ? settings.fixedTargetLang ?? ""
                     : targetLang || settings.lastUsedTargetLang || ""
                 }
-                readOnly={settings.routingStrategy === "defaultBased"}
+                disabled={settings.routingStrategy === "defaultBased"}
                 onChange={(e) => {
                   const v = e.target.value;
                   if (settings.routingStrategy === "alwaysFixed") {
@@ -779,8 +869,12 @@ function App() {
                     setSettings((s) => ({ ...s, lastUsedTargetLang: v }));
                   }
                 }}
-                style={{ width: 160 }}
-              />
+                style={{ width: 180 }}
+              >
+                {ALL_LANGUAGES.map((lang) => (
+                  <option key={lang} value={lang}>{lang}</option>
+                ))}
+              </select>
             </label>
           </div>
         </div>
@@ -798,37 +892,34 @@ function App() {
 
       {/* ====== Action Buttons ====== */}
       <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-        <button className="btn" onClick={() => void handleHotkey()}>
-          🎯 Test Translate
-        </button>
         <button
           className="btn btn-secondary"
           onClick={() => void handleCopy()}
           disabled={!translatedText.trim()}
         >
-          📋 Copy
+          📋 コピー
         </button>
       </div>
 
       {/* ====== Source Text ====== */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 12, fontWeight: 500, color: "#6b7280", marginBottom: 6 }}>Source</div>
+        <div style={{ fontSize: 12, fontWeight: 500, color: "#6b7280", marginBottom: 6 }}>原文</div>
         <textarea
           className="textarea"
           value={sourceText}
           readOnly
-          placeholder="Selected text will appear here..."
+          placeholder="選択したテキストがここに表示されます..."
         />
       </div>
 
       {/* ====== Translation Text ====== */}
       <div>
-        <div style={{ fontSize: 12, fontWeight: 500, color: "#6b7280", marginBottom: 6 }}>Translation</div>
+        <div style={{ fontSize: 12, fontWeight: 500, color: "#6b7280", marginBottom: 6 }}>翻訳</div>
         <textarea
           className="textarea"
           value={translatedText}
           readOnly
-          placeholder="Translation will appear here..."
+          placeholder="翻訳結果がここに表示されます..."
           style={{ minHeight: 140 }}
         />
       </div>
