@@ -1,8 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type PopupState = {
   status?: string;
@@ -11,7 +9,7 @@ type PopupState = {
 
 export default function Popup() {
   const [state, setState] = useState<PopupState>({ status: "Translating…", translation: "" });
-  const [copied, setCopied] = useState(false);
+  const hasFocusedRef = useRef(false);
 
   // #region agent log
   function agentLog(message: string, data: Record<string, unknown>) {
@@ -47,12 +45,6 @@ export default function Popup() {
   }, []);
 
   useEffect(() => {
-    if (!copied) return;
-    const t = window.setTimeout(() => setCopied(false), 900);
-    return () => window.clearTimeout(t);
-  }, [copied]);
-
-  useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         void getCurrentWebviewWindow().close();
@@ -63,8 +55,21 @@ export default function Popup() {
   }, []);
 
   useEffect(() => {
-    // NOTE: "close on blur" is intentionally disabled for now.
-    // Some environments can emit a blur immediately after creation, which makes the popup appear to "not show".
+    // Close when clicking outside (approximated by window blur).
+    // Guard: only close on blur after we have successfully received focus at least once.
+    const w = getCurrentWebviewWindow();
+    const unsubPromise = w.onFocusChanged(({ payload }) => {
+      if (payload === true) {
+        hasFocusedRef.current = true;
+        return;
+      }
+      if (payload === false && hasFocusedRef.current) {
+        void w.close();
+      }
+    });
+    return () => {
+      void unsubPromise.then((unsub) => unsub()).catch(() => {});
+    };
   }, []);
 
   return (
@@ -74,91 +79,26 @@ export default function Popup() {
         height: "100%",
         padding: 10,
         boxSizing: "border-box",
-        background: "rgba(255,255,255,0.98)",
-        borderRadius: 8,
-        boxShadow: "none",
-        border: "1px solid rgba(0,0,0,0.15)",
+        background: "rgba(255,255,255,0.95)",
+        borderRadius: 10,
+        boxShadow: "0 14px 40px rgba(0,0,0,0.18)",
+        border: "none",
         overflow: "hidden",
         userSelect: "text",
       }}
     >
       <div
-        data-tauri-drag-region
-        onMouseDown={(e) => {
-          if (e.button !== 0) return;
-          // Explicit dragging: works more reliably than drag-region in some environments.
-          void getCurrentWindow().startDragging();
-        }}
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
-          cursor: "move",
-          paddingBottom: 8,
+          fontSize: 13,
+          lineHeight: 1.4,
+          maxHeight: "30vh",
+          minHeight: 90,
+          overflow: "auto",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
         }}
-        title="Drag to move"
       >
-        <div style={{ flex: 1 }} />
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <button
-            onClick={() => {
-              const t = state.translation?.trim() ?? "";
-              if (!t) return;
-              void writeText(t).then(() => setCopied(true)).catch(() => {});
-            }}
-            style={{
-              height: 26,
-              padding: "0 10px",
-              borderRadius: 10,
-              border: "1px solid rgba(0,0,0,0.12)",
-              background: "rgba(255,255,255,0.9)",
-              cursor: state.translation?.trim() ? "pointer" : "not-allowed",
-              opacity: state.translation?.trim() ? 1 : 0.45,
-              fontSize: 12,
-            }}
-            aria-label="Copy translation"
-            title="Copy"
-          >
-            {copied ? "✓" : "📋"}
-          </button>
-          <button
-            onClick={() => void getCurrentWebviewWindow().close()}
-            style={{
-              width: 26,
-              height: 26,
-              borderRadius: 10,
-              border: "1px solid rgba(0,0,0,0.12)",
-              background: "rgba(255,255,255,0.9)",
-              cursor: "pointer",
-              lineHeight: "24px",
-            }}
-            aria-label="Close"
-            title="Close (Esc)"
-          >
-            ×
-          </button>
-        </div>
-      </div>
-
-      <div style={{ marginTop: 10 }}>
-        <div
-          style={{
-            fontSize: 13,
-            lineHeight: 1.35,
-            maxHeight: "30vh",
-            minHeight: 90,
-            overflow: "auto",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-            padding: "8px 10px",
-            borderRadius: 6,
-            background: "transparent",
-            border: "1px solid rgba(0,0,0,0.10)",
-          }}
-        >
-          {state.translation || ""}
-        </div>
+        {state.translation || ""}
       </div>
     </div>
   );
