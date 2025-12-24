@@ -7,9 +7,24 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-release:
+  create-release:
     permissions:
       contents: write
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Create GitHub Release (if missing)
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "ErudAite Desktop ${{ github.ref_name }}"
+          body: "Automated build from ${{ github.ref_name }}."
+          draft: false
+          prerelease: false
+
+  build:
+    needs: [create-release]
     strategy:
       fail-fast: false
       matrix:
@@ -43,16 +58,47 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build & publish (Tauri)
-        uses: tauri-apps/tauri-action@v0
+      - name: Build (Windows)
+        if: matrix.os == 'windows-latest'
+        run: npm run tauri build -- --bundles nsis,msi
+
+      - name: Build (macOS)
+        if: matrix.os == 'macos-latest'
+        run: npm run tauri build -- --bundles dmg
+
+      - name: Build (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: npm run tauri build -- --bundles deb,appimage
+
+      - name: Upload bundle artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.os }}
+          path: src-tauri/target/release/bundle/**
+          if-no-files-found: error
+
+  upload-to-release:
+    needs: [create-release, build]
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Upload assets to GitHub Release
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Uses the git tag (e.g. v0.1.0) as the release tag.
-          tagName: ${{ github.ref_name }}
-          releaseName: "ErudAite Desktop ${{ github.ref_name }}"
-          releaseBody: "Automated build from ${{ github.ref_name }}."
-          releaseDraft: false
-          prerelease: false
+          tag_name: ${{ github.ref_name }}
+          files: |
+            artifacts/**/**/*.msi
+            artifacts/**/**/*.exe
+            artifacts/**/**/*.dmg
+            artifacts/**/**/*.AppImage
+            artifacts/**/**/*.deb
 
 
