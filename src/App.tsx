@@ -357,16 +357,29 @@ function App() {
 
   const closePopupIfOpen = useCallback(async () => {
     let w: WebviewWindow | null = popupRef.current;
+    // #region agent log (H8)
+    __agentLog("H8", "desktop/src/App.tsx:closePopupIfOpen", "enter", {
+      hasRef: Boolean(w),
+    });
+    // #endregion
     if (!w) {
       try {
         w = await WebviewWindow.getByLabel("popup");
       } catch (e) {
+        // #region agent log (H8)
+        __agentLog("H8", "desktop/src/App.tsx:closePopupIfOpen", "getByLabel failed", {
+          err: e instanceof Error ? e.message : String(e),
+        });
+        // #endregion
         return false;
       }
     }
     if (!w) return false;
     try {
       const vis = await w.isVisible();
+      // #region agent log (H8)
+      __agentLog("H8", "desktop/src/App.tsx:closePopupIfOpen", "isVisible", { vis });
+      // #endregion
       // Only treat as "open" if it's actually visible. Hidden/closed windows should NOT short-circuit hotkey.
       if (!vis) {
         popupRef.current = null;
@@ -378,6 +391,9 @@ function App() {
     try {
       // Force-destroy to avoid leaving a hidden zombie window with the same label.
       await w.destroy();
+      // #region agent log (H8)
+      __agentLog("H8", "desktop/src/App.tsx:closePopupIfOpen", "destroyed", {});
+      // #endregion
     } catch {
       // ignore
     }
@@ -386,6 +402,12 @@ function App() {
   }, []);
 
   const ensurePopupAtCursor = useCallback(async () => {
+    // #region agent log (H9)
+    __agentLog("H9", "desktop/src/App.tsx:ensurePopupAtCursor", "enter", {
+      hasRef: Boolean(popupRef.current),
+      focusOnOpen: settings.popupFocusOnOpen,
+    });
+    // #endregion
     // If already open, just move + focus
     let existing: WebviewWindow | null = popupRef.current;
     if (!existing) {
@@ -399,6 +421,9 @@ function App() {
       popupRef.current = existing;
       try {
         const vis = await existing.isVisible();
+        // #region agent log (H9)
+        __agentLog("H9", "desktop/src/App.tsx:ensurePopupAtCursor", "existing isVisible", { vis });
+        // #endregion
         if (!vis) {
           // A hidden/stale window with the same label can stick around and refuse to show.
           try {
@@ -417,6 +442,9 @@ function App() {
           // NOTE: show() may focus on some platforms; we log to verify.
           await existing.show();
           if (settings.popupFocusOnOpen) await existing.setFocus();
+          // #region agent log (H9)
+          __agentLog("H9", "desktop/src/App.tsx:ensurePopupAtCursor", "existing show/setFocus ok", {});
+          // #endregion
           try {
             const vis2 = await existing.isVisible();
             if (!vis2) {
@@ -429,6 +457,11 @@ function App() {
           }
         } catch (e) {
           void e;
+          // #region agent log (H9)
+          __agentLog("H9", "desktop/src/App.tsx:ensurePopupAtCursor", "existing show failed", {
+            err: e instanceof Error ? e.message : String(e),
+          });
+          // #endregion
           try {
             await existing.destroy();
           } catch (e2) {
@@ -522,6 +555,12 @@ function App() {
   const handleHotkey = useCallback(async () => {
     const now = Date.now();
     lastHotkeyAtRef.current = now;
+    // #region agent log (H10)
+    __agentLog("H10", "desktop/src/App.tsx:handleHotkey", "enter", {
+      now,
+      inFlight: hotkeyInFlightRef.current,
+    });
+    // #endregion
     // Toggle behavior: if popup is open, close it and stop.
     let closed = false;
     try {
@@ -530,11 +569,17 @@ function App() {
       void e;
       closed = false;
     }
+    // #region agent log (H10)
+    __agentLog("H10", "desktop/src/App.tsx:handleHotkey", "after closePopupIfOpen", { closed });
+    // #endregion
     if (closed) {
       return;
     }
 
     if (hotkeyInFlightRef.current) {
+      // #region agent log (H10)
+      __agentLog("H10", "desktop/src/App.tsx:handleHotkey", "inFlight short-circuit", {});
+      // #endregion
       return;
     }
 
@@ -547,7 +592,15 @@ function App() {
       try {
         // NOTE: Tauri invoke側はcamelCaseで渡す（Rustのtimeout_msにマッピングされる）
         const args = { timeoutMs: 1600 };
+        // #region agent log (H11)
+        __agentLog("H11", "desktop/src/App.tsx:capture", "invoke capture_selected_text", { args });
+        // #endregion
         picked = String(await invoke("capture_selected_text", args)).trim();
+        // #region agent log (H11)
+        __agentLog("H11", "desktop/src/App.tsx:capture", "capture_selected_text returned", {
+          pickedLen: picked.length,
+        });
+        // #endregion
       } catch (e) {
         // Do NOT fallback to clipboard here; it can silently translate stale clipboard content.
         // Instead, surface an actionable error to the user.
@@ -560,6 +613,9 @@ function App() {
         }
         const msg = e instanceof Error ? e.message : String(e);
         setStatus(`Capture failed: ${msg}`);
+        // #region agent log (H11)
+        __agentLog("H11", "desktop/src/App.tsx:capture", "capture_selected_text threw", { msg });
+        // #endregion
         setStatus("Capture failed. Keep Chrome focused, select text, then press hotkey again.");
         return;
       }
