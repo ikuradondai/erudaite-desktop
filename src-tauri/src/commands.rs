@@ -1,13 +1,14 @@
 use serde::Serialize;
 use tauri::ipc::Channel;
 // (no hashing needed)
-use std::io::Write;
 #[cfg(windows)]
 use windows_sys::Win32::Foundation::POINT;
 #[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
 #[cfg(target_os = "macos")]
 use core_graphics::event::CGEvent;
+#[cfg(target_os = "macos")]
+use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 
 fn agent_log(_hypothesis_id: &str, _message: &str, _data: serde_json::Value) {
   // (debug logging removed)
@@ -51,7 +52,9 @@ pub fn get_cursor_position() -> Result<CursorPosition, String> {
 
   #[cfg(target_os = "macos")]
   {
-    let ev = CGEvent::new(std::ptr::null_mut()).map_err(|e| format!("CGEvent::new failed: {e:?}"))?;
+    let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState)
+      .map_err(|_| "CGEventSource::new failed".to_string())?;
+    let ev = CGEvent::new(source).map_err(|_| "CGEvent::new failed".to_string())?;
     let loc = ev.location();
     return Ok(CursorPosition {
       x: loc.x as i32,
