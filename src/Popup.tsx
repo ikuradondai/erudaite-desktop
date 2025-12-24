@@ -64,6 +64,9 @@ export default function Popup() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       agentLog("keydown", { key: e.key });
+      // Some platforms don't emit focusChanged(true) reliably.
+      // If we receive any key events, the popup is effectively focused.
+      hasFocusedRef.current = true;
       if (e.key === "Escape") {
         agentLog("close via esc", {});
         closeSelf("esc");
@@ -71,6 +74,15 @@ export default function Popup() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    // If the user clicks inside the popup, treat it as focused for the purpose of blur-to-close.
+    const onPointerDown = () => {
+      hasFocusedRef.current = true;
+    };
+    window.addEventListener("pointerdown", onPointerDown, { capture: true });
+    return () => window.removeEventListener("pointerdown", onPointerDown, { capture: true } as any);
   }, []);
 
   useEffect(() => {
