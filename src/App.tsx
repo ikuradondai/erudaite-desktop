@@ -58,7 +58,6 @@ type Settings = {
   routingStrategy: RoutingStrategy;
   popupFocusOnOpen: boolean;
   lastUsedTargetLang?: string;
-  fixedTargetLang?: string;
   onboarded?: boolean;
   favoritePairs?: Array<{ from: string; to: string }>;
 };
@@ -170,7 +169,6 @@ const DEFAULT_SETTINGS: Settings = {
   secondaryLanguage: "English (US)",
   routingStrategy: "alwaysFixed",
   popupFocusOnOpen: true,
-  fixedTargetLang: "Japanese",
   onboarded: false,
   favoritePairs: [
     { from: "English (US)", to: "Japanese" },
@@ -322,7 +320,6 @@ function App() {
       // Migrate old stored values (Japanese labels) to API codes.
       merged.defaultLanguage = normalizeLangCode(merged.defaultLanguage, DEFAULT_SETTINGS.defaultLanguage);
       merged.secondaryLanguage = normalizeLangCode(merged.secondaryLanguage, DEFAULT_SETTINGS.secondaryLanguage);
-      merged.fixedTargetLang = normalizeLangCode(merged.fixedTargetLang, merged.defaultLanguage);
       if (merged.lastUsedTargetLang) {
         merged.lastUsedTargetLang = normalizeLangCode(merged.lastUsedTargetLang, merged.defaultLanguage);
       }
@@ -634,6 +631,18 @@ function App() {
         }
         // status already set above
         setStatus("No selected text detected. Select text and press the hotkey again.");
+        // Also surface this in the popup so it doesn't feel like "nothing happened".
+        try {
+          await ensurePopupAtCursor();
+          emitPopupState({
+            status: "No selection",
+            source: "",
+            translation:
+              "選択テキストを取得できませんでした。\n\n- 対象アプリ（例: Chrome）をアクティブにする\n- テキストを選択する\n- もう一度ホットキーを押す\n\n※ うまくいかない場合は、選択をやり直して再度お試しください。",
+          });
+        } catch {
+          // ignore popup failures
+        }
         return;
       }
 
@@ -643,7 +652,6 @@ function App() {
         routingStrategy: settings.routingStrategy,
         defaultLanguage: settings.defaultLanguage,
         secondaryLanguage: settings.secondaryLanguage,
-        fixedTargetLang: settings.fixedTargetLang,
         lastUsedTargetLang: settings.lastUsedTargetLang,
         apiBaseUrl: settings.apiBaseUrl,
       });
@@ -672,7 +680,6 @@ function App() {
           routingStrategy: settings.routingStrategy,
           defaultLanguage: settings.defaultLanguage,
           secondaryLanguage: settings.secondaryLanguage,
-          fixedTargetLang: settings.fixedTargetLang,
         });
         // #endregion
 
@@ -742,7 +749,8 @@ function App() {
       let active = { runId: 0, target: "", donePromise: Promise.resolve("") as Promise<string> };
 
       if (settings.routingStrategy === "alwaysFixed") {
-        const target = normalizeLangCode(settings.fixedTargetLang, settings.defaultLanguage);
+        // Spec change: when auto-routing is OFF, always translate to "default language".
+        const target = normalizeLangCode(settings.defaultLanguage, DEFAULT_SETTINGS.defaultLanguage);
         active = runTranslate(target);
         // detect in background for UI only
         void (async () => {
@@ -864,7 +872,6 @@ function App() {
     settings.clipboardMode,
     settings.defaultLanguage,
     settings.secondaryLanguage,
-    settings.fixedTargetLang,
     settings.hotkey,
     settings.lastUsedTargetLang,
     settings.routingStrategy,
@@ -1116,7 +1123,7 @@ function App() {
 
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-              <span style={{ fontWeight: 500, color: isAutoRouting ? activeLabelColor : inactiveLabelColor }}>
+              <span style={{ fontWeight: 500, color: activeLabelColor }}>
                 母国語
               </span>
               <select
@@ -1151,36 +1158,9 @@ function App() {
               </select>
             </label>
 
-            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-              <span style={{ fontWeight: 500, color: isAutoRouting ? inactiveLabelColor : activeLabelColor }}>
-                強制翻訳先言語
-              </span>
-              <select
-                className="input"
-                value={
-                  settings.routingStrategy === "alwaysFixed"
-                    ? settings.fixedTargetLang ?? ""
-                    : targetLang || settings.lastUsedTargetLang || ""
-                }
-                disabled={isAutoRouting}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (settings.routingStrategy === "alwaysFixed") {
-                    setSettings((s) => ({ ...s, fixedTargetLang: v }));
-                  } else {
-                    setTargetLang(v);
-                    setSettings((s) => ({ ...s, lastUsedTargetLang: v }));
-                  }
-                }}
-                style={{ width: 180 }}
-              >
-                {TARGET_LANG_OPTIONS.map((o) => (
-                  <option key={o.code} value={o.code}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {/* Spec change: remove forced target language.
+                - Auto routing ON: route between default/secondary.
+                - Auto routing OFF: always translate to default language. */}
           </div>
         </div>
       </div>
@@ -1190,7 +1170,7 @@ function App() {
         {status && <div className={statusBadgeClass}>{status}</div>}
         {detectedLang && detectedLang !== "Unknown" && (
           <div style={{ fontSize: 12, color: "#6b7280" }}>
-            {labelOfLang(detectedLang)} → {labelOfLang(targetLang || settings.lastUsedTargetLang || settings.fixedTargetLang || "")}
+            {labelOfLang(detectedLang)} → {labelOfLang(targetLang || settings.lastUsedTargetLang || settings.defaultLanguage || "")}
           </div>
         )}
       </div>
