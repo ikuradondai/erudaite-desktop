@@ -11,10 +11,6 @@ export default function Popup() {
   const [state, setState] = useState<PopupState>({ status: "Translating…", translation: "" });
   const hasFocusedRef = useRef(false);
 
-  function agentLog(): void {
-    // (debug logging removed)
-  }
-
   useEffect(() => {
     void emit("erudaite://popup/ready", { label: getCurrentWebviewWindow().label }).catch(() => {});
     const unlistenPromise = listen<PopupState>("erudaite://popup/state", (e) => {

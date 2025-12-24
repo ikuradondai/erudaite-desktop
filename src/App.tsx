@@ -46,7 +46,7 @@ const DEFAULT_SETTINGS: Settings = {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const FALLBACK_HOTKEY = "CommandOrControl+Shift+Alt+Q";
 
-function agentLog(): void {
+function agentLog(..._args: unknown[]): void {
   // (debug logging removed)
 }
 

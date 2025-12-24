@@ -1,6 +1,6 @@
 use serde::Serialize;
 use tauri::ipc::Channel;
-use std::hash::{Hash, Hasher};
+// (no hashing needed)
 #[cfg(windows)]
 use windows_sys::Win32::Foundation::POINT;
 #[cfg(windows)]
