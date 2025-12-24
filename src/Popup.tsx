@@ -54,27 +54,17 @@ export default function Popup() {
       style={{
         width: "100%",
         height: "100%",
-        padding: 10,
+        padding: 12,
         boxSizing: "border-box",
         background: "rgba(255,255,255,0.95)",
         borderRadius: 10,
         boxShadow: "0 14px 40px rgba(0,0,0,0.18)",
         border: "none",
-        overflow: "hidden",
+        overflow: "auto",
         userSelect: "text",
       }}
     >
-      <div
-        style={{
-          fontSize: 13,
-          lineHeight: 1.4,
-          maxHeight: "30vh",
-          minHeight: 90,
-          overflow: "auto",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-        }}
-      >
+      <div style={{ fontSize: 13, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
         {state.translation || ""}
       </div>
     </div>
