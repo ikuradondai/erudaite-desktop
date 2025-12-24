@@ -561,6 +561,17 @@ function App() {
       inFlight: hotkeyInFlightRef.current,
     });
     // #endregion
+
+    // If a translation/capture is already in flight, ignore hotkey re-press.
+    // Otherwise, the "toggle close popup" behavior can destroy the popup mid-translation,
+    // making it look like nothing happened.
+    if (hotkeyInFlightRef.current) {
+      // #region agent log (H10)
+      __agentLog("H10", "desktop/src/App.tsx:handleHotkey", "ignore: inFlight before toggle-close", {});
+      // #endregion
+      return;
+    }
+
     // Toggle behavior: if popup is open, close it and stop.
     let closed = false;
     try {
@@ -573,13 +584,6 @@ function App() {
     __agentLog("H10", "desktop/src/App.tsx:handleHotkey", "after closePopupIfOpen", { closed });
     // #endregion
     if (closed) {
-      return;
-    }
-
-    if (hotkeyInFlightRef.current) {
-      // #region agent log (H10)
-      __agentLog("H10", "desktop/src/App.tsx:handleHotkey", "inFlight short-circuit", {});
-      // #endregion
       return;
     }
 
