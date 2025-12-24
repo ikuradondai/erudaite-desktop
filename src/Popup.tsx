@@ -29,15 +29,35 @@ export default function Popup() {
   }
   // #endregion
 
+  const closeSelf = (reason: string) => {
+    const w = getCurrentWebviewWindow();
+    agentLog("closeSelf called", { reason, label: w.label });
+    w.close()
+      .then(() => agentLog("closeSelf close() resolved", { reason }))
+      .catch((e) => {
+        agentLog("closeSelf close() rejected", { reason, err: e instanceof Error ? e.message : String(e) });
+        // Fallback: hide (in case close is blocked by permissions/policy)
+        w.hide()
+          .then(() => agentLog("closeSelf hide() resolved", { reason }))
+          .catch((e2) =>
+            agentLog("closeSelf hide() rejected", { reason, err: e2 instanceof Error ? e2.message : String(e2) }),
+          );
+      });
+  };
+
   useEffect(() => {
     const w = getCurrentWebviewWindow();
     agentLog("mounted", { label: w.label });
+    const unlistenDestroyedP = w.listen("tauri://destroyed", () => agentLog("tauri destroyed", {}));
+    const unlistenCloseReqP = w.listen("tauri://close-requested", () => agentLog("tauri close-requested", {}));
     void emit("erudaite://popup/ready", { label: getCurrentWebviewWindow().label }).catch(() => {});
     const unlistenPromise = listen<PopupState>("erudaite://popup/state", (e) => {
       setState((s) => ({ ...s, ...e.payload }));
     });
     return () => {
       void unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
+      void unlistenDestroyedP.then((u) => u()).catch(() => {});
+      void unlistenCloseReqP.then((u) => u()).catch(() => {});
     };
   }, []);
 
@@ -46,7 +66,7 @@ export default function Popup() {
       agentLog("keydown", { key: e.key });
       if (e.key === "Escape") {
         agentLog("close via esc", {});
-        void getCurrentWebviewWindow().close();
+        closeSelf("esc");
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -65,7 +85,7 @@ export default function Popup() {
       }
       if (payload === false && hasFocusedRef.current) {
         agentLog("close via blur", {});
-        void w.close();
+        closeSelf("blur");
       }
     });
     return () => {
