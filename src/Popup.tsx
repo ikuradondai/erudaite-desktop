@@ -14,6 +14,26 @@ export default function Popup() {
   const [isFocused, setIsFocused] = useState(true);
 
   const closeSelf = (_reason: string) => {
+    // #region agent log (H1/H3)
+    fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "desktop/src/Popup.tsx:closeSelf",
+        message: "closeSelf",
+        data: {
+          reason: _reason,
+          hasFocused: hasFocusedRef.current,
+          isFocusedState: isFocused,
+          documentHasFocus: typeof document !== "undefined" ? document.hasFocus() : null,
+        },
+        timestamp: Date.now(),
+        sessionId: "debug-session",
+        runId: "pre-fix",
+        hypothesisId: "H1",
+      }),
+    }).catch(() => {});
+    // #endregion
     const w = getCurrentWebviewWindow();
     // IMPORTANT: `close()` can resolve even if the window stays visible (close-request accepted but not applied).
     // To guarantee UX, hide first (disappear), then close/destroy for cleanup.
@@ -31,6 +51,27 @@ export default function Popup() {
 
   useEffect(() => {
     const w = getCurrentWebviewWindow();
+    // #region agent log (H1/H2)
+    fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "desktop/src/Popup.tsx:mount",
+        message: "popup mount",
+        data: {
+          label: w.label,
+          documentHasFocus: typeof document !== "undefined" ? document.hasFocus() : null,
+          hasFocused: hasFocusedRef.current,
+          isFocusedState: isFocused,
+          href: typeof window !== "undefined" ? window.location.href : null,
+        },
+        timestamp: Date.now(),
+        sessionId: "debug-session",
+        runId: "pre-fix",
+        hypothesisId: "H1",
+      }),
+    }).catch(() => {});
+    // #endregion
     const unlistenDestroyedP = w.listen("tauri://destroyed", () => {});
     const unlistenCloseReqP = w.listen("tauri://close-requested", () => {});
     void emit("erudaite://popup/ready", { label: getCurrentWebviewWindow().label }).catch(() => {});
@@ -49,6 +90,21 @@ export default function Popup() {
       // Some platforms don't emit focusChanged(true) reliably.
       // If we receive any key events, the popup is effectively focused.
       hasFocusedRef.current = true;
+      // #region agent log (H1/H5)
+      fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          location: "desktop/src/Popup.tsx:onKeyDown",
+          message: "keydown in popup",
+          data: { key: e.key, hasFocusedAfter: hasFocusedRef.current, documentHasFocus: document.hasFocus() },
+          timestamp: Date.now(),
+          sessionId: "debug-session",
+          runId: "pre-fix",
+          hypothesisId: "H1",
+        }),
+      }).catch(() => {});
+      // #endregion
       if (e.key === "Escape") {
         closeSelf("esc");
       }
@@ -61,6 +117,21 @@ export default function Popup() {
     // If the user clicks inside the popup, treat it as focused for the purpose of blur-to-close.
     const onPointerDown = () => {
       hasFocusedRef.current = true;
+      // #region agent log (H1/H5)
+      fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          location: "desktop/src/Popup.tsx:onPointerDown",
+          message: "pointerdown in popup",
+          data: { hasFocusedAfter: hasFocusedRef.current, documentHasFocus: document.hasFocus() },
+          timestamp: Date.now(),
+          sessionId: "debug-session",
+          runId: "pre-fix",
+          hypothesisId: "H5",
+        }),
+      }).catch(() => {});
+      // #endregion
     };
     window.addEventListener("pointerdown", onPointerDown, { capture: true });
     return () => window.removeEventListener("pointerdown", onPointerDown, { capture: true } as any);
@@ -71,6 +142,25 @@ export default function Popup() {
     // Guard: only close on blur after we have successfully received focus at least once.
     const w = getCurrentWebviewWindow();
     const unsubPromise = w.onFocusChanged(({ payload }) => {
+      // #region agent log (H1/H3)
+      fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          location: "desktop/src/Popup.tsx:onFocusChanged",
+          message: "focusChanged",
+          data: {
+            payload,
+            hasFocusedBefore: hasFocusedRef.current,
+            documentHasFocus: typeof document !== "undefined" ? document.hasFocus() : null,
+          },
+          timestamp: Date.now(),
+          sessionId: "debug-session",
+          runId: "pre-fix",
+          hypothesisId: "H3",
+        }),
+      }).catch(() => {});
+      // #endregion
       setIsFocused(payload === true);
       if (payload === true) {
         hasFocusedRef.current = true;

@@ -286,6 +286,24 @@ function App() {
     popupRef.current = popup;
 
     popup.once("tauri://created", () => {
+      // #region agent log (H1/H2)
+      fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          location: "desktop/src/App.tsx:popup-created",
+          message: "popup created",
+          data: {
+            popupFocusOnOpen: settings.popupFocusOnOpen,
+            url: popupUrl,
+          },
+          timestamp: Date.now(),
+          sessionId: "debug-session",
+          runId: "pre-fix",
+          hypothesisId: "H1",
+        }),
+      }).catch(() => {});
+      // #endregion
       // NOTE: show() may focus on some platforms; we log to verify.
       void (async () => {
         try {
@@ -300,6 +318,21 @@ function App() {
             // ignore
           }
         }
+        // #region agent log (H2)
+        fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location: "desktop/src/App.tsx:popup-created-after-show-focus",
+            message: "popup show/setFocus attempted",
+            data: { popupFocusOnOpen: settings.popupFocusOnOpen },
+            timestamp: Date.now(),
+            sessionId: "debug-session",
+            runId: "pre-fix",
+            hypothesisId: "H2",
+          }),
+        }).catch(() => {});
+        // #endregion
       })();
       emitPopupState({}); // flush latest state after creation
     });
