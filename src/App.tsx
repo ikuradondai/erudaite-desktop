@@ -201,12 +201,12 @@ function App() {
       y,
       resizable: false,
       decorations: false,
-      transparent: true,
+      transparent: false,
       alwaysOnTop: true,
       skipTaskbar: true,
       focus: true,
       visible: true,
-      shadow: true,
+      shadow: false,
     });
     popupRef.current = popup;
 
