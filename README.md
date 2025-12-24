@@ -42,7 +42,10 @@ npm run tauri dev
 
 Notes:
 - This repo may live under OneDrive on Windows; Cargo builds can fail there.
-  We set `target-dir = "C:/cargo-target"` in `src-tauri/.cargo/config.toml`.
+  If you hit OneDrive write/lock issues, set a local target dir via env var (recommended):
+  - PowerShell:
+    - `$env:CARGO_TARGET_DIR = \"C:\\cargo-target\\erudaite-desktop\"`
+  Then run `npm run tauri dev` / `npm run tauri build`.
 
 ## Build
 
