@@ -50,6 +50,24 @@ const FALLBACK_HOTKEY = "CommandOrControl+Shift+Alt+Q";
 
 // (popup-close instrumentation removed)
 
+// #region agent log
+function agentLog(message: string, data: Record<string, unknown>) {
+  fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionId: "debug-session",
+      runId: "popup-focus-flag",
+      hypothesisId: "F1",
+      location: "desktop/src/App.tsx",
+      message,
+      data,
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 function App() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [status, setStatus] = useState<string>("");
@@ -86,6 +104,10 @@ function App() {
       const s = (await store.get<Settings>("settings")) ?? DEFAULT_SETTINGS;
       if (!mounted) return;
       const merged = { ...DEFAULT_SETTINGS, ...s };
+      agentLog("settings loaded", {
+        popupFocusOnOpen: merged.popupFocusOnOpen,
+        hotkey: merged.hotkey,
+      });
       setSettings(merged);
       if (!merged.onboarded) setShowWizard(true);
     })().catch(() => {
@@ -256,6 +278,7 @@ function App() {
       if (settings.popupFocusOnOpen) {
         void popup.setFocus().catch(() => {});
       }
+      agentLog("popup created", { popupFocusOnOpen: settings.popupFocusOnOpen });
       emitPopupState({}); // flush latest state after creation
     });
 
