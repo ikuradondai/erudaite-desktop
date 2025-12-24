@@ -46,9 +46,7 @@ const DEFAULT_SETTINGS: Settings = {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const FALLBACK_HOTKEY = "CommandOrControl+Shift+Alt+Q";
 
-function agentLog(..._args: unknown[]): void {
-  // (debug logging removed)
-}
+// (debug logging removed)
 
 function App() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -109,24 +107,8 @@ function App() {
     (partial: { status?: string; source?: string; translation?: string }) => {
       lastPopupStateRef.current = { ...lastPopupStateRef.current, ...partial };
       const payload = lastPopupStateRef.current;
-      // #region agent log
-      agentLog("H12", "emitTo popup state", {
-        status: payload.status ?? null,
-        sourceLen: (payload.source ?? "").length,
-        translationLen: (payload.translation ?? "").length,
-      });
-      // #endregion
       void emitTo("popup", "erudaite://popup/state", payload)
-        .then(() => {
-          // #region agent log
-          agentLog("H12", "emitTo popup ok", {});
-          // #endregion
-        })
-        .catch((e) => {
-          // #region agent log
-          agentLog("H12", "emitTo popup failed", { err: e instanceof Error ? e.message : String(e) });
-          // #endregion
-        });
+        .catch(() => {});
     },
     [],
   );
@@ -189,10 +171,6 @@ function App() {
       ? `${window.location.origin}/#/popup`
       : "index.html#/popup";
 
-    // #region agent log
-    agentLog("H11", "creating popup window", { popupUrl, x, y, initialW, initialH });
-    // #endregion
-
     const popup = new WebviewWindow("popup", {
       url: popupUrl,
       width: initialW,
@@ -211,17 +189,9 @@ function App() {
     popupRef.current = popup;
 
     popup.once("tauri://created", () => {
-      // #region agent log
-      agentLog("H11", "popup created", {});
-      // #endregion
       void popup.show().catch(() => {});
       void popup.setFocus().catch(() => {});
       emitPopupState({}); // flush latest state after creation
-    });
-    popup.once("tauri://error", (e) => {
-      // #region agent log
-      agentLog("H11", "popup create error", { e });
-      // #endregion
     });
 
     popup.once("tauri://destroyed", () => {
@@ -236,7 +206,6 @@ function App() {
 
   const handleHotkey = useCallback(async () => {
     const now = Date.now();
-    const deltaMs = lastHotkeyAtRef.current ? now - lastHotkeyAtRef.current : null;
     lastHotkeyAtRef.current = now;
 
     // Toggle behavior: if popup is open, close it and stop.
@@ -245,9 +214,6 @@ function App() {
     }
 
     if (hotkeyInFlightRef.current) {
-      // #region agent log
-      agentLog("H7", "hotkey ignored (in-flight)", { deltaMs });
-      // #endregion
       return;
     }
 
@@ -257,31 +223,13 @@ function App() {
     try {
       // OS全体の選択取得（擬似Ctrl/Cmd+C→復元）をRust側で実施
       let picked = "";
-      // #region agent log
-      agentLog("H1", "hotkey handler start", {
-        deltaMs,
-        hotkey: settings.hotkey,
-        apiBaseUrl: settings.apiBaseUrl,
-        routingStrategy: settings.routingStrategy,
-        clipboardMode: settings.clipboardMode,
-      });
-      // #endregion
       try {
         // NOTE: Tauri invoke側はcamelCaseで渡す（Rustのtimeout_msにマッピングされる）
         const args = { timeoutMs: 1600 };
-        // #region agent log
-        agentLog("H2", "invoke capture_selected_text", { argsKeys: Object.keys(args) });
-        // #endregion
         picked = String(await invoke("capture_selected_text", args)).trim();
-        // #region agent log
-        agentLog("H3", "capture_selected_text returned", { pickedLen: picked.length });
-        // #endregion
       } catch (e) {
         // Do NOT fallback to clipboard here; it can silently translate stale clipboard content.
         // Instead, surface an actionable error to the user.
-        // #region agent log
-        agentLog("H2", "capture_selected_text threw", { err: e instanceof Error ? e.message : String(e) });
-        // #endregion
         try {
           const w = getCurrentWebviewWindow();
           await w.show();
@@ -296,9 +244,6 @@ function App() {
       }
       if (!picked) {
         // Bring the window forward so the user sees the failure reason.
-        // #region agent log
-        agentLog("H3", "picked is empty", {});
-        // #endregion
         try {
           const w = getCurrentWebviewWindow();
           await w.show();
@@ -330,9 +275,6 @@ function App() {
         // ignore; keep Unknown
       }
       setDetectedLang(detected);
-      // #region agent log
-      agentLog("H1", "detected language", { detected });
-      // #endregion
 
       let target = settings.defaultLanguage;
       if (settings.routingStrategy === "alwaysFixed") {
@@ -417,10 +359,7 @@ function App() {
   useEffect(() => {
     const unlistenPromise = (async () => {
       const { listen } = await import("@tauri-apps/api/event");
-      return await listen<{ label: string }>("erudaite://popup/ready", (e) => {
-        // #region agent log
-        agentLog("H12", "popup ready received", { label: e.payload?.label ?? null });
-        // #endregion
+      return await listen<{ label: string }>("erudaite://popup/ready", () => {
         emitPopupState({});
       });
     })();
