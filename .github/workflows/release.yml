@@ -52,7 +52,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "ErudAite Desktop ${{ github.ref_name }}"
           releaseBody: "Automated build from ${{ github.ref_name }}."
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
 
 
