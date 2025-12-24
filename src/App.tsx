@@ -46,77 +46,100 @@ type Settings = {
 };
 
 // デフォルト言語として選択可能な6言語
-const DEFAULT_LANGUAGES = [
-  "日本語",
-  "英語（アメリカ）",
-  "繁体字中国語",
-  "簡体字中国語",
-  "韓国語",
-  "インドネシア語",
+type LangOption = { code: string; label: string };
+
+// 接続先（lightning_translation/web）の期待値は「英語のcode文字列」。
+// UI表示は日本語label、保存/比較/API送信はcodeを使う（多言語で破綻しないため）。
+const TARGET_LANG_OPTIONS: LangOption[] = [
+  { code: "Japanese", label: "日本語" },
+  { code: "English (US)", label: "英語（アメリカ）" },
+  { code: "English (UK)", label: "英語（イギリス）" },
+  { code: "Korean", label: "韓国語" },
+  { code: "Chinese (Simplified)", label: "簡体字中国語" },
+  { code: "Chinese (Traditional)", label: "繁体字中国語" },
+  { code: "Thai", label: "タイ語" },
+  { code: "Indonesian", label: "インドネシア語" },
+  { code: "Khmer", label: "クメール語" },
+  { code: "Tagalog", label: "タガログ語" },
+  { code: "Vietnamese", label: "ベトナム語" },
+  { code: "Standard Mongolian", label: "標準モンゴル語" },
+  { code: "Khalkha Mongolian", label: "ハルハ・モンゴル語" },
+  { code: "Tibetan", label: "チベット語" },
+  { code: "Dzongkha", label: "ゾンカ語" },
+  { code: "Hindi", label: "ヒンディー語" },
+  { code: "Urdu", label: "ウルドゥー語" },
+  { code: "Tamil", label: "タミル語" },
+  { code: "Sinhala", label: "シンハラ語" },
+  { code: "Nepali", label: "ネパール語" },
+  { code: "Assamese", label: "アッサム語" },
+  { code: "Arabic", label: "アラビア語" },
+  { code: "Hebrew", label: "ヘブライ語" },
+  { code: "Persian", label: "ペルシャ語（ファルシ語）" },
+  { code: "Turkish", label: "トルコ語" },
+  { code: "Spanish", label: "スペイン語" },
+  { code: "Spanish (Mexico)", label: "スペイン語（メキシコ）" },
+  { code: "French", label: "フランス語" },
+  { code: "German", label: "ドイツ語" },
+  { code: "Italian", label: "イタリア語" },
+  { code: "Dutch", label: "オランダ語" },
+  { code: "Swedish", label: "スウェーデン語" },
+  { code: "Danish", label: "デンマーク語" },
+  { code: "Norwegian", label: "ノルウェー語" },
+  { code: "Portuguese (Portugal)", label: "ポルトガル語（ポルトガル）" },
+  { code: "Portuguese (Brazil)", label: "ポルトガル語（ブラジル）" },
+  { code: "Romanian", label: "ルーマニア語" },
+  { code: "Polish", label: "ポーランド語" },
+  { code: "Czech", label: "チェコ語" },
+  { code: "Slovak", label: "スロバキア語" },
+  { code: "Hungarian", label: "ハンガリー語" },
+  { code: "Bulgarian", label: "ブルガリア語" },
+  { code: "Macedonian", label: "マケドニア語" },
+  { code: "Ukrainian", label: "ウクライナ語" },
+  { code: "Russian", label: "ロシア語" },
+  { code: "Serbian", label: "セルビア語" },
+  { code: "Croatian", label: "クロアチア語" },
+  { code: "Slovenian", label: "スロベニア語" },
+  { code: "Greek", label: "ギリシャ語" },
+  { code: "Lithuanian", label: "リトアニア語" },
+  { code: "Latvian", label: "ラトビア語" },
+  { code: "Irish", label: "アイルランド語" },
+  { code: "Welsh", label: "ウェールズ語" },
+  { code: "Finnish", label: "フィンランド語" },
+  { code: "Estonian", label: "エストニア語" },
+  { code: "Maltese", label: "マルタ語" },
+  { code: "Amharic", label: "アムハラ語" },
+  { code: "Tigrinya", label: "ティグリニャ語" },
+  { code: "Oromo", label: "オロモ語" },
 ];
 
-// ターゲット言語として選択可能な59言語
-const ALL_LANGUAGES = [
-  "日本語",
-  "英語（アメリカ）",
-  "英語（イギリス）",
-  "韓国語",
-  "簡体字中国語",
-  "繁体字中国語",
-  "タイ語",
-  "インドネシア語",
-  "クメール語",
-  "タガログ語",
-  "ベトナム語",
-  "標準モンゴル語",
-  "ハルハ・モンゴル語",
-  "チベット語",
-  "ゾンカ語",
-  "ヒンディー語",
-  "ウルドゥー語",
-  "タミル語",
-  "シンハラ語",
-  "ネパール語",
-  "アッサム語",
-  "アラビア語",
-  "ヘブライ語",
-  "ペルシャ語（ファルシ語）",
-  "トルコ語",
-  "スペイン語",
-  "フランス語",
-  "ドイツ語",
-  "イタリア語",
-  "オランダ語",
-  "スウェーデン語",
-  "デンマーク語",
-  "ノルウェー語",
-  "ポルトガル語（ポルトガル）",
-  "ルーマニア語",
-  "ポーランド語",
-  "チェコ語",
-  "セルビア語",
-  "クロアチア語",
-  "リトアニア語",
-  "ラトビア語",
-  "アイルランド語",
-  "ウェールズ語",
-  "フィンランド語",
-  "エストニア語",
-  "ハンガリー語",
-  "スロバキア語",
-  "ギリシャ語",
-  "スロベニア語",
-  "ブルガリア語",
-  "マケドニア語",
-  "マルタ語",
-  "ウクライナ語",
-  "ロシア語",
-  "アムハラ語",
-  "ティグリニャ語",
-  "オロモ語",
-  "ポルトガル語（ブラジル）",
-  "スペイン語（メキシコ）",
+const DEFAULT_LANG_OPTIONS: LangOption[] = [
+  { code: "Japanese", label: "日本語" },
+  { code: "English (US)", label: "英語（アメリカ）" },
+  { code: "Chinese (Traditional)", label: "繁体字中国語" },
+  { code: "Chinese (Simplified)", label: "簡体字中国語" },
+  { code: "Korean", label: "韓国語" },
+  { code: "Indonesian", label: "インドネシア語" },
 ];
+
+const LABEL_BY_CODE: Record<string, string> = Object.fromEntries(TARGET_LANG_OPTIONS.map((o) => [o.code, o.label]));
+const CODE_BY_LABEL: Record<string, string> = Object.fromEntries(TARGET_LANG_OPTIONS.map((o) => [o.label, o.code]));
+
+function labelOfLang(code: string): string {
+  return LABEL_BY_CODE[code] ?? code;
+}
+
+function normalizeLangCode(maybeCodeOrLabel: string | undefined, fallbackCode: string): string {
+  const raw = (maybeCodeOrLabel ?? "").trim();
+  if (!raw) return fallbackCode;
+  // Already a known code
+  if (LABEL_BY_CODE[raw]) return raw;
+  // Japanese label -> code
+  if (CODE_BY_LABEL[raw]) return CODE_BY_LABEL[raw];
+  // Common older values (EN name without region)
+  const low = raw.toLowerCase();
+  if (low === "english") return "English (US)";
+  return fallbackCode;
+}
 
 const DEFAULT_SETTINGS: Settings = {
   // NOTE:
@@ -125,15 +148,15 @@ const DEFAULT_SETTINGS: Settings = {
   hotkey: "CommandOrControl+Shift+Alt+Z",
   clipboardMode: "displayOnly",
   apiBaseUrl: "https://lighting-translation.vercel.app",
-  defaultLanguage: "日本語",
-  secondaryLanguage: "英語（アメリカ）",
+  defaultLanguage: "Japanese",
+  secondaryLanguage: "English (US)",
   routingStrategy: "alwaysFixed",
   popupFocusOnOpen: true,
-  fixedTargetLang: "日本語",
+  fixedTargetLang: "Japanese",
   onboarded: false,
   favoritePairs: [
-    { from: "英語（アメリカ）", to: "日本語" },
-    { from: "日本語", to: "英語（アメリカ）" },
+    { from: "English (US)", to: "Japanese" },
+    { from: "Japanese", to: "English (US)" },
   ],
 };
 
@@ -197,18 +220,30 @@ function canonLang(s: string): string {
 }
 
 function isSameLanguage(a: string, b: string): boolean {
-  return canonLang(a) === canonLang(b);
+  // Prefer code-based comparison; fall back to canon when older values are present.
+  const ac = normalizeLangCode(a, a);
+  const bc = normalizeLangCode(b, b);
+  return ac === bc || canonLang(a) === canonLang(b);
+}
+
+function containsHangul(text: string): boolean {
+  return /[\uac00-\ud7af]/.test(text);
+}
+
+function containsHanNoKana(text: string): boolean {
+  // Han (CJK Unified Ideographs) and NOT Hiragana/Katakana
+  const hasHan = /[\u4e00-\u9fff]/.test(text);
+  const hasKana = /[\u3040-\u30ff]/.test(text);
+  return hasHan && !hasKana;
 }
 
 function guessDetectedLangHeuristic(text: string, defaultLanguage: string): "default" | "not_default" | "unknown" {
-  const d = defaultLanguage.toLowerCase();
-  // Handle both English and Japanese language names
-  if (d.includes("japanese") || d.includes("日本語")) {
-    return containsJapanese(text) ? "default" : "not_default";
-  }
-  if (d.includes("english") || d.includes("英語")) {
-    return isMostlyAscii(text) ? "default" : "not_default";
-  }
+  const d = normalizeLangCode(defaultLanguage, defaultLanguage);
+  if (d === "Japanese") return containsJapanese(text) ? "default" : "not_default";
+  if (d.startsWith("English")) return isMostlyAscii(text) ? "default" : "not_default";
+  if (d === "Korean") return containsHangul(text) ? "default" : "not_default";
+  if (d === "Chinese (Simplified)" || d === "Chinese (Traditional)") return containsHanNoKana(text) ? "default" : "not_default";
+  if (d === "Indonesian") return isMostlyAscii(text) ? "default" : "not_default";
   return "unknown";
 }
 
@@ -266,7 +301,13 @@ function App() {
       const s = (await store.get<Settings>("settings")) ?? DEFAULT_SETTINGS;
       if (!mounted) return;
       const merged = { ...DEFAULT_SETTINGS, ...s };
-      if (!merged.fixedTargetLang) merged.fixedTargetLang = merged.defaultLanguage;
+      // Migrate old stored values (Japanese labels) to API codes.
+      merged.defaultLanguage = normalizeLangCode(merged.defaultLanguage, DEFAULT_SETTINGS.defaultLanguage);
+      merged.secondaryLanguage = normalizeLangCode(merged.secondaryLanguage, DEFAULT_SETTINGS.secondaryLanguage);
+      merged.fixedTargetLang = normalizeLangCode(merged.fixedTargetLang, merged.defaultLanguage);
+      if (merged.lastUsedTargetLang) {
+        merged.lastUsedTargetLang = normalizeLangCode(merged.lastUsedTargetLang, merged.defaultLanguage);
+      }
       setSettings(merged);
       if (!merged.onboarded) setShowWizard(true);
     })().catch(() => {
@@ -608,7 +649,7 @@ function App() {
       let active = { runId: 0, target: "", donePromise: Promise.resolve("") as Promise<string> };
 
       if (settings.routingStrategy === "alwaysFixed") {
-        const target = settings.fixedTargetLang?.trim() || settings.defaultLanguage;
+        const target = normalizeLangCode(settings.fixedTargetLang, settings.defaultLanguage);
         active = runTranslate(target);
         // detect in background for UI only
         void (async () => {
@@ -630,7 +671,7 @@ function App() {
           setDetectedLang(detectedForUi);
         })();
       } else if (settings.routingStrategy === "alwaysLastUsed") {
-        const target = settings.lastUsedTargetLang?.trim() || settings.defaultLanguage;
+        const target = normalizeLangCode(settings.lastUsedTargetLang, settings.defaultLanguage);
         active = runTranslate(target);
         void (async () => {
           try {
@@ -823,7 +864,7 @@ function App() {
     <div>
       {/* ====== Header ====== */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <div>
+      <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: "#1f2937" }}>
             Welcome to ErudAite Desktop Application
           </h1>
@@ -858,8 +899,10 @@ function App() {
                 onChange={(e) => setSettings((s) => ({ ...s, defaultLanguage: e.target.value }))}
                 style={{ width: 180 }}
               >
-                {DEFAULT_LANGUAGES.map((lang) => (
-                  <option key={lang} value={lang}>{lang}</option>
+                {DEFAULT_LANG_OPTIONS.map((o) => (
+                  <option key={o.code} value={o.code}>
+                    {o.label}
+                  </option>
                 ))}
               </select>
             </label>
@@ -871,8 +914,10 @@ function App() {
                 onChange={(e) => setSettings((s) => ({ ...s, secondaryLanguage: e.target.value }))}
                 style={{ width: 180 }}
               >
-                {ALL_LANGUAGES.map((lang) => (
-                  <option key={lang} value={lang}>{lang}</option>
+                {TARGET_LANG_OPTIONS.map((o) => (
+                  <option key={o.code} value={o.code}>
+                    {o.label}
+                  </option>
                 ))}
               </select>
             </label>
@@ -987,8 +1032,10 @@ function App() {
                 onChange={(e) => setSettings((s) => ({ ...s, defaultLanguage: e.target.value }))}
                 style={{ width: 180 }}
               >
-                {DEFAULT_LANGUAGES.map((lang) => (
-                  <option key={lang} value={lang}>{lang}</option>
+                {DEFAULT_LANG_OPTIONS.map((o) => (
+                  <option key={o.code} value={o.code}>
+                    {o.label}
+                  </option>
                 ))}
               </select>
             </label>
@@ -1003,8 +1050,10 @@ function App() {
                 onChange={(e) => setSettings((s) => ({ ...s, secondaryLanguage: e.target.value }))}
                 style={{ width: 180 }}
               >
-                {ALL_LANGUAGES.map((lang) => (
-                  <option key={lang} value={lang}>{lang}</option>
+                {TARGET_LANG_OPTIONS.map((o) => (
+                  <option key={o.code} value={o.code}>
+                    {o.label}
+                  </option>
                 ))}
               </select>
             </label>
@@ -1032,8 +1081,10 @@ function App() {
                 }}
                 style={{ width: 180 }}
               >
-                {ALL_LANGUAGES.map((lang) => (
-                  <option key={lang} value={lang}>{lang}</option>
+                {TARGET_LANG_OPTIONS.map((o) => (
+                  <option key={o.code} value={o.code}>
+                    {o.label}
+                  </option>
                 ))}
               </select>
             </label>
@@ -1046,7 +1097,7 @@ function App() {
         {status && <div className={statusBadgeClass}>{status}</div>}
         {detectedLang && detectedLang !== "Unknown" && (
           <div style={{ fontSize: 12, color: "#6b7280" }}>
-            {detectedLang} → {targetLang || settings.lastUsedTargetLang || settings.fixedTargetLang || ""}
+            {labelOfLang(detectedLang)} → {labelOfLang(targetLang || settings.lastUsedTargetLang || settings.fixedTargetLang || "")}
           </div>
         )}
       </div>
