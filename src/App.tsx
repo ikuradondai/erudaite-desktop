@@ -36,14 +36,47 @@ const DEFAULT_SETTINGS: Settings = {
   apiBaseUrl: "https://lighting-translation.vercel.app",
   defaultLanguage: "Japanese",
   secondaryLanguage: "English (US)",
-  routingStrategy: "defaultBased",
+  routingStrategy: "alwaysFixed",
   popupFocusOnOpen: true,
+  fixedTargetLang: "Japanese",
   onboarded: false,
   favoritePairs: [
     { from: "English (US)", to: "Japanese" },
     { from: "Japanese", to: "English (US)" },
   ],
 };
+
+function isMostlyAscii(text: string): boolean {
+  if (!text) return true;
+  let ascii = 0;
+  let total = 0;
+  for (const ch of text) {
+    const code = ch.charCodeAt(0);
+    if (code === 0) continue;
+    // ignore whitespace
+    if (ch === " " || ch === "\n" || ch === "\r" || ch === "\t") continue;
+    total += 1;
+    if (code <= 0x7f) ascii += 1;
+  }
+  if (total === 0) return true;
+  return ascii / total >= 0.9;
+}
+
+function containsJapanese(text: string): boolean {
+  // Hiragana, Katakana, CJK Unified Ideographs (common Kanji range)
+  return /[\u3040-\u30ff\u4e00-\u9fff]/.test(text);
+}
+
+function guessDetectedLangHeuristic(text: string, defaultLanguage: string): "default" | "not_default" | "unknown" {
+  const d = defaultLanguage.toLowerCase();
+  if (d.includes("japanese")) {
+    return containsJapanese(text) ? "default" : "not_default";
+  }
+  if (d.includes("english")) {
+    return isMostlyAscii(text) ? "default" : "not_default";
+  }
+  return "unknown";
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const FALLBACK_HOTKEY = "CommandOrControl+Shift+Alt+Q";
@@ -62,6 +95,7 @@ function App() {
   const [lastCaptureNote, setLastCaptureNote] = useState<string>("");
   const hotkeyInFlightRef = useRef(false);
   const lastHotkeyAtRef = useRef(0);
+  const translationRunIdRef = useRef(0);
   const popupRef = useRef<WebviewWindow | null>(null);
   const lastPopupStateRef = useRef<{ status?: string; source?: string; translation?: string }>({
     status: "Translating…",
@@ -86,6 +120,7 @@ function App() {
       const s = (await store.get<Settings>("settings")) ?? DEFAULT_SETTINGS;
       if (!mounted) return;
       const merged = { ...DEFAULT_SETTINGS, ...s };
+      if (!merged.fixedTargetLang) merged.fixedTargetLang = merged.defaultLanguage;
       setSettings(merged);
       if (!merged.onboarded) setShowWizard(true);
     })().catch(() => {
@@ -345,68 +380,127 @@ function App() {
       setLastCaptureNote(`Capture: ${picked.length} chars`);
       setStatus("Translating…");
 
-      // detect language (for routing)
-      let detected = "Unknown";
-      try {
-        const r = (await invoke("detect_language", { baseUrl: settings.apiBaseUrl, text: picked })) as {
-          detected_lang?: string;
-        };
-        detected = String(r?.detected_lang ?? "Unknown");
-      } catch {
-        // ignore; keep Unknown
-      }
-      setDetectedLang(detected);
-
-      let target = settings.defaultLanguage;
-      if (settings.routingStrategy === "alwaysFixed") {
-        target = settings.fixedTargetLang?.trim() || settings.defaultLanguage;
-      } else if (settings.routingStrategy === "alwaysLastUsed") {
-        target = settings.lastUsedTargetLang?.trim() || settings.defaultLanguage;
-      } else {
-        // defaultBased
-        if (detected === settings.defaultLanguage) {
-          target = settings.secondaryLanguage;
-        } else {
-          target = settings.defaultLanguage;
-        }
-      }
-      setTargetLang(target);
-
-      // CORS回避のため、翻訳実行はRust側でSSEを中継する
-      let full = "";
-      const ch = new Channel<{ type: "delta"; content: string } | { type: "done" } | { type: "error"; message: string }>();
-      ch.onmessage = (msg) => {
-        if (msg.type === "delta") {
-          full += msg.content;
-          setTranslatedText(full);
-          emitPopupState({ status: "Translating…", translation: full });
-
-          // Resize popup loosely based on content length (best effort)
-          const lines = full.split(/\r?\n/).length;
-          const h = Math.min(300, Math.max(150, 140 + Math.min(8, lines) * 18));
-          const w = Math.min(400, Math.max(300, 360));
-          const p = popupRef.current;
-          if (p) {
-            void p.setSize(new PhysicalSize(w, h)).catch(() => {});
-          }
-        } else if (msg.type === "error") {
-          setStatus(`Error: ${msg.message}`);
-          emitPopupState({ status: `Error: ${msg.message}` });
-        }
+      const computeTargetDefaultBased = (detectedLang: string) => {
+        return detectedLang === settings.defaultLanguage ? settings.secondaryLanguage : settings.defaultLanguage;
       };
 
-      await invoke("translate_sse", {
-        baseUrl: settings.apiBaseUrl,
-        text: picked,
-        targetLang: target,
-        mode: "standard",
-        explanationLang: "ja",
-        isReverse: false,
-        onEvent: ch,
-      });
+      const runTranslate = (target: string) => {
+        const runId = ++translationRunIdRef.current;
+        let full = "";
+
+        setTargetLang(target);
+        setTranslatedText("");
+        // Popup shows only translation text; use a lightweight placeholder immediately.
+        emitPopupState({ status: "Translating…", source: picked, translation: "…" });
+
+        const ch = new Channel<
+          { type: "delta"; content: string } | { type: "done" } | { type: "error"; message: string }
+        >();
+
+        ch.onmessage = (msg) => {
+          if (runId !== translationRunIdRef.current) return; // ignore stale streams
+          if (msg.type === "delta") {
+            full += msg.content;
+            setTranslatedText(full);
+            emitPopupState({ status: "Translating…", translation: full });
+
+            // Resize popup loosely based on content length (best effort)
+            const lines = full.split(/\r?\n/).length;
+            const h = Math.min(300, Math.max(150, 140 + Math.min(8, lines) * 18));
+            const w = Math.min(400, Math.max(300, 360));
+            const p = popupRef.current;
+            if (p) void p.setSize(new PhysicalSize(w, h)).catch(() => {});
+          } else if (msg.type === "error") {
+            setStatus(`Error: ${msg.message}`);
+            emitPopupState({ status: `Error: ${msg.message}` });
+          }
+        };
+
+        const donePromise = (async () => {
+          await invoke("translate_sse", {
+            baseUrl: settings.apiBaseUrl,
+            text: picked,
+            targetLang: target,
+            mode: "standard",
+            explanationLang: "ja",
+            isReverse: false,
+            onEvent: ch,
+          });
+          return full;
+        })();
+
+        return { runId, target, donePromise };
+      };
+
+      // Fast routing:
+      // - alwaysFixed/alwaysLastUsed: skip detect_language; start translation immediately.
+      // - defaultBased: heuristic first; run detect_language in parallel; if mismatch, re-run.
+      let detectedForUi = "Unknown";
+      let active = { runId: 0, target: "", donePromise: Promise.resolve("") as Promise<string> };
+
+      if (settings.routingStrategy === "alwaysFixed") {
+        const target = settings.fixedTargetLang?.trim() || settings.defaultLanguage;
+        active = runTranslate(target);
+        // detect in background for UI only
+        void (async () => {
+          try {
+            const r = (await invoke("detect_language", { baseUrl: settings.apiBaseUrl, text: picked })) as {
+              detected_lang?: string;
+            };
+            detectedForUi = String(r?.detected_lang ?? "Unknown");
+          } catch {
+            // ignore
+          }
+          setDetectedLang(detectedForUi);
+        })();
+      } else if (settings.routingStrategy === "alwaysLastUsed") {
+        const target = settings.lastUsedTargetLang?.trim() || settings.defaultLanguage;
+        active = runTranslate(target);
+        void (async () => {
+          try {
+            const r = (await invoke("detect_language", { baseUrl: settings.apiBaseUrl, text: picked })) as {
+              detected_lang?: string;
+            };
+            detectedForUi = String(r?.detected_lang ?? "Unknown");
+          } catch {
+            // ignore
+          }
+          setDetectedLang(detectedForUi);
+        })();
+      } else {
+        // defaultBased (fast path): heuristic -> start; detect -> maybe restart
+        const kind = guessDetectedLangHeuristic(picked, settings.defaultLanguage);
+        const heuristicDetected = kind === "default" ? settings.defaultLanguage : "Unknown";
+        const target0 =
+          kind === "default"
+            ? settings.secondaryLanguage
+            : settings.defaultLanguage;
+
+        active = runTranslate(target0);
+
+        // detect_language in parallel; potentially restart.
+        try {
+          const r = (await invoke("detect_language", { baseUrl: settings.apiBaseUrl, text: picked })) as {
+            detected_lang?: string;
+          };
+          detectedForUi = String(r?.detected_lang ?? heuristicDetected ?? "Unknown");
+        } catch {
+          detectedForUi = heuristicDetected ?? "Unknown";
+        }
+        setDetectedLang(detectedForUi);
+
+        if (detectedForUi !== "Unknown") {
+          const targetReal = computeTargetDefaultBased(detectedForUi);
+          if (targetReal !== active.target) {
+            active = runTranslate(targetReal);
+          }
+        }
+      }
+
+      const full = await active.donePromise;
 
       // remember last used target for alwaysLastUsed
-      setSettings((s) => ({ ...s, lastUsedTargetLang: target }));
+      setSettings((s) => ({ ...s, lastUsedTargetLang: active.target }));
 
       if (settings.clipboardMode === "displayAndCopy" || settings.clipboardMode === "copyOnly") {
         await writeText(full || translatedText || "");
@@ -431,10 +525,13 @@ function App() {
     emitPopupState,
     settings.apiBaseUrl,
     settings.clipboardMode,
+    settings.defaultLanguage,
+    settings.secondaryLanguage,
+    settings.fixedTargetLang,
     settings.hotkey,
+    settings.lastUsedTargetLang,
     settings.routingStrategy,
     translatedText,
-    targetLang,
   ]);
 
   useEffect(() => {
@@ -620,6 +717,20 @@ function App() {
         </label>
 
         <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          Auto route (defaultBased)
+          <input
+            type="checkbox"
+            checked={settings.routingStrategy === "defaultBased"}
+            onChange={(e) =>
+              setSettings((s) => ({
+                ...s,
+                routingStrategy: e.target.checked ? "defaultBased" : "alwaysFixed",
+              }))
+            }
+          />
+        </label>
+
+        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
           Clipboard
           <select
             value={settings.clipboardMode}
@@ -638,18 +749,6 @@ function App() {
             onChange={(e) => setSettings((s) => ({ ...s, apiBaseUrl: e.target.value }))}
             style={{ width: 260 }}
           />
-        </label>
-
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          Routing
-          <select
-            value={settings.routingStrategy}
-            onChange={(e) => setSettings((s) => ({ ...s, routingStrategy: e.target.value as RoutingStrategy }))}
-          >
-            <option value="defaultBased">Default-based</option>
-            <option value="alwaysLastUsed">Always last used</option>
-            <option value="alwaysFixed">Always fixed</option>
-          </select>
         </label>
 
         <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
