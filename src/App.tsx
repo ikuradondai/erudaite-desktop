@@ -181,6 +181,8 @@ function App() {
       popupRef.current = existing;
       try {
         const vis = await existing.isVisible();
+        const focused = await existing.isFocused().catch(() => null);
+        agentLog("popup reuse pre-show", { popupFocusOnOpen: settings.popupFocusOnOpen, visible: vis, focused });
         if (!vis) {
           // A hidden/stale window with the same label can stick around and refuse to show.
           try {
@@ -196,10 +198,12 @@ function App() {
       }
       if (existing) {
         try {
+          // NOTE: show() may focus on some platforms; we log to verify.
           await existing.show();
-          if (settings.popupFocusOnOpen) {
-            await existing.setFocus();
-          }
+          if (settings.popupFocusOnOpen) await existing.setFocus();
+          const visAfter = await existing.isVisible().catch(() => null);
+          const focusedAfter = await existing.isFocused().catch(() => null);
+          agentLog("popup reuse post-show", { popupFocusOnOpen: settings.popupFocusOnOpen, visible: visAfter, focused: focusedAfter });
           try {
             const vis2 = await existing.isVisible();
             if (!vis2) {
@@ -274,11 +278,12 @@ function App() {
     popupRef.current = popup;
 
     popup.once("tauri://created", () => {
+      // NOTE: show() may focus; we log to verify.
       void popup.show().catch(() => {});
-      if (settings.popupFocusOnOpen) {
-        void popup.setFocus().catch(() => {});
-      }
-      agentLog("popup created", { popupFocusOnOpen: settings.popupFocusOnOpen });
+      if (settings.popupFocusOnOpen) void popup.setFocus().catch(() => {});
+      void Promise.all([popup.isVisible().catch(() => null), popup.isFocused().catch(() => null)]).then(([vis, focused]) => {
+        agentLog("popup created", { popupFocusOnOpen: settings.popupFocusOnOpen, visible: vis, focused });
+      });
       emitPopupState({}); // flush latest state after creation
     });
 
