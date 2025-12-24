@@ -42,19 +42,14 @@ export default function Popup() {
       })
       .catch((e) => agentLog("hide() rejected", { reason, err: e instanceof Error ? e.message : String(e) }));
 
-    w.close()
-      .then(async () => {
-        const vis = await getCurrentWindow().isVisible().catch(() => null);
-        agentLog("close() resolved", { reason, visibleAfter: vis });
-      })
-      .catch(async (e) => {
-        agentLog("close() rejected", { reason, err: e instanceof Error ? e.message : String(e) });
-        try {
-          await getCurrentWindow().destroy();
-          agentLog("destroy() resolved", { reason });
-        } catch (e2) {
-          agentLog("destroy() rejected", { reason, err: e2 instanceof Error ? e2.message : String(e2) });
-        }
+    // Force destroy to avoid leaving a hidden zombie window with the same label (breaks reopen).
+    getCurrentWindow()
+      .destroy()
+      .then(() => agentLog("destroy() resolved", { reason }))
+      .catch((e) => {
+        agentLog("destroy() rejected", { reason, err: e instanceof Error ? e.message : String(e) });
+        // Best-effort fallback
+        w.close().catch(() => {});
       });
   };
 

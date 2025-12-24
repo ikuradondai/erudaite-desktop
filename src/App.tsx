@@ -154,12 +154,11 @@ function App() {
       agentLog("closePopupIfOpen found (isVisible failed)", { err: e instanceof Error ? e.message : String(e) });
     }
     try {
-      // Hide first to guarantee it disappears, then close for cleanup (best effort).
-      await w.hide().catch(() => {});
-      await w.close();
-      agentLog("closePopupIfOpen close() resolved", {});
+      // Force-destroy to avoid leaving a hidden zombie window with the same label.
+      await w.destroy();
+      agentLog("closePopupIfOpen destroy() resolved", {});
     } catch {
-      agentLog("closePopupIfOpen close() rejected", {});
+      agentLog("closePopupIfOpen destroy() rejected", {});
       // ignore
     }
     popupRef.current = null;
@@ -182,23 +181,50 @@ function App() {
       try {
         const vis = await existing.isVisible();
         agentLog("ensurePopupAtCursor reuse", { visibleBefore: vis });
+        if (!vis) {
+          // A hidden/stale window with the same label can stick around and refuse to show.
+          agentLog("ensurePopupAtCursor reuse is hidden -> destroy+recreate", {});
+          try {
+            await existing.destroy();
+            agentLog("ensurePopupAtCursor stale destroy() resolved", {});
+          } catch (e) {
+            agentLog("ensurePopupAtCursor stale destroy() rejected", { err: e instanceof Error ? e.message : String(e) });
+          }
+          popupRef.current = null;
+          existing = null;
+        }
       } catch (e) {
         agentLog("ensurePopupAtCursor reuse (isVisible failed)", { err: e instanceof Error ? e.message : String(e) });
       }
-      try {
-        await existing.show();
-        await existing.setFocus();
+      if (existing) {
         try {
-          const vis2 = await existing.isVisible();
-          agentLog("ensurePopupAtCursor reuse show resolved", { visibleAfter: vis2 });
-        } catch {
-          agentLog("ensurePopupAtCursor reuse show resolved (isVisible failed)", {});
+          await existing.show();
+          await existing.setFocus();
+          try {
+            const vis2 = await existing.isVisible();
+            agentLog("ensurePopupAtCursor reuse show resolved", { visibleAfter: vis2 });
+            if (!vis2) {
+              agentLog("ensurePopupAtCursor reuse still hidden -> destroy+recreate", {});
+              await existing.destroy().catch(() => {});
+              popupRef.current = null;
+              existing = null;
+            }
+          } catch {
+            agentLog("ensurePopupAtCursor reuse show resolved (isVisible failed)", {});
+          }
+        } catch (e) {
+          agentLog("ensurePopupAtCursor reuse show rejected", { err: e instanceof Error ? e.message : String(e) });
+          try {
+            await existing.destroy();
+            agentLog("ensurePopupAtCursor reuse destroy() resolved", {});
+          } catch (e2) {
+            agentLog("ensurePopupAtCursor reuse destroy() rejected", { err: e2 instanceof Error ? e2.message : String(e2) });
+          }
+          popupRef.current = null;
+          existing = null;
         }
-      } catch {
-        // ignore
-        agentLog("ensurePopupAtCursor reuse show rejected", {});
       }
-      return existing;
+      if (existing) return existing;
     }
 
     const cursor = (await invoke("get_cursor_position")) as { x: number; y: number };
