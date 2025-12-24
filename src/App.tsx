@@ -158,6 +158,48 @@ function containsJapanese(text: string): boolean {
   return /[\u3040-\u30ff\u4e00-\u9fff]/.test(text);
 }
 
+function canonLang(s: string): string {
+  const key = (s || "").trim().toLowerCase();
+  // Normalize common display-name variants (JP labels) and detect_language outputs (EN labels)
+  // We only need strong correctness for the 6 "defaultLanguage" options, but include common variants.
+  const map: Record<string, string> = {
+    // Japanese
+    "日本語": "ja",
+    "japanese": "ja",
+    // English (US)
+    "英語（アメリカ）": "en-us",
+    "英語(アメリカ)": "en-us",
+    "english (us)": "en-us",
+    "english (u.s.)": "en-us",
+    "american english": "en-us",
+    // English (UK)
+    "英語（イギリス）": "en-gb",
+    "英語(イギリス)": "en-gb",
+    "english (uk)": "en-gb",
+    "english (u.k.)": "en-gb",
+    "british english": "en-gb",
+    // Korean
+    "韓国語": "ko",
+    "korean": "ko",
+    // Chinese (Simplified)
+    "簡体字中国語": "zh-hans",
+    "simplified chinese": "zh-hans",
+    "chinese (simplified)": "zh-hans",
+    // Chinese (Traditional)
+    "繁体字中国語": "zh-hant",
+    "traditional chinese": "zh-hant",
+    "chinese (traditional)": "zh-hant",
+    // Indonesian
+    "インドネシア語": "id",
+    "indonesian": "id",
+  };
+  return map[key] ?? key;
+}
+
+function isSameLanguage(a: string, b: string): boolean {
+  return canonLang(a) === canonLang(b);
+}
+
 function guessDetectedLangHeuristic(text: string, defaultLanguage: string): "default" | "not_default" | "unknown" {
   const d = defaultLanguage.toLowerCase();
   // Handle both English and Japanese language names
@@ -497,7 +539,7 @@ function App() {
       setStatus("Translating…");
 
       const computeTargetDefaultBased = (detectedLang: string) => {
-        return detectedLang === settings.defaultLanguage ? settings.secondaryLanguage : settings.defaultLanguage;
+        return isSameLanguage(detectedLang, settings.defaultLanguage) ? settings.secondaryLanguage : settings.defaultLanguage;
       };
 
       const runTranslate = (target: string) => {
