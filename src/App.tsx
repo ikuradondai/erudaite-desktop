@@ -278,12 +278,24 @@ function App() {
     popupRef.current = popup;
 
     popup.once("tauri://created", () => {
-      // NOTE: show() may focus; we log to verify.
-      void popup.show().catch(() => {});
-      if (settings.popupFocusOnOpen) void popup.setFocus().catch(() => {});
-      void Promise.all([popup.isVisible().catch(() => null), popup.isFocused().catch(() => null)]).then(([vis, focused]) => {
+      // NOTE: show() may focus on some platforms; we log to verify.
+      void (async () => {
+        try {
+          await popup.show();
+        } catch {
+          // ignore
+        }
+        if (settings.popupFocusOnOpen) {
+          try {
+            await popup.setFocus();
+          } catch {
+            // ignore
+          }
+        }
+        const vis = await popup.isVisible().catch(() => null);
+        const focused = await popup.isFocused().catch(() => null);
         agentLog("popup created", { popupFocusOnOpen: settings.popupFocusOnOpen, visible: vis, focused });
-      });
+      })();
       emitPopupState({}); // flush latest state after creation
     });
 

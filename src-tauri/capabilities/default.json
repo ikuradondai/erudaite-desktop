@@ -12,6 +12,7 @@
     "core:window:allow-close",
     "core:window:allow-hide",
     "core:window:allow-destroy",
+    "core:window:allow-set-focus",
     "clipboard-manager:default",
     "global-shortcut:default",
     "global-shortcut:allow-register",

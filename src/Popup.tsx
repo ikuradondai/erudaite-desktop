@@ -105,9 +105,10 @@ export default function Popup() {
     };
   }, []);
 
+  // Make focus state obvious WITHOUT drawing an inner border around the text area.
   const chrome = isFocused
-    ? { border: "1px solid rgba(0,0,0,0.35)", opacity: 1 }
-    : { border: "1px solid rgba(0,0,0,0.14)", opacity: 0.9 };
+    ? { opacity: 1, background: "#ffffff" }
+    : { opacity: 0.72, background: "#f2f2f2" };
 
   return (
     <div
@@ -116,10 +117,10 @@ export default function Popup() {
         height: "100%",
         padding: 12,
         boxSizing: "border-box",
-        background: "#ffffff",
+        background: chrome.background,
         borderRadius: 0,
         boxShadow: "none",
-        border: chrome.border,
+        border: "none",
         opacity: chrome.opacity,
         overflow: "auto",
         userSelect: "text",
