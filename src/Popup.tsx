@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type PopupState = {
   status?: string;
@@ -33,20 +34,33 @@ export default function Popup() {
     const w = getCurrentWebviewWindow();
     agentLog("closeSelf called", { reason, label: w.label });
     w.close()
-      .catch((e) => {
+      .then(async () => {
+        let vis: boolean | null = null;
+        try {
+          vis = await getCurrentWindow().isVisible();
+        } catch {
+          // ignore
+        }
+        agentLog("close() resolved", { reason, visibleAfter: vis });
+      })
+      .catch(async (e) => {
         agentLog("close() rejected", { reason, err: e instanceof Error ? e.message : String(e) });
         // Fallback: hide (in case close is blocked by permissions/policy)
-        w.hide()
-          .then(() => agentLog("hide() resolved", { reason }))
-          .catch((e2) => agentLog("hide() rejected", { reason, err: e2 instanceof Error ? e2.message : String(e2) }));
+        try {
+          await w.hide();
+          const vis = await getCurrentWindow().isVisible().catch(() => null);
+          agentLog("hide() resolved", { reason, visibleAfter: vis });
+        } catch (e2) {
+          agentLog("hide() rejected", { reason, err: e2 instanceof Error ? e2.message : String(e2) });
+        }
       });
   };
 
   useEffect(() => {
     const w = getCurrentWebviewWindow();
     agentLog("mounted", { label: w.label, href: window.location.href });
-    const unlistenDestroyedP = w.listen("tauri://destroyed", () => {});
-    const unlistenCloseReqP = w.listen("tauri://close-requested", () => {});
+    const unlistenDestroyedP = w.listen("tauri://destroyed", () => agentLog("tauri destroyed", {}));
+    const unlistenCloseReqP = w.listen("tauri://close-requested", () => agentLog("tauri close-requested", {}));
     void emit("erudaite://popup/ready", { label: getCurrentWebviewWindow().label }).catch(() => {});
     const unlistenPromise = listen<PopupState>("erudaite://popup/state", (e) => {
       setState((s) => ({ ...s, ...e.payload }));
