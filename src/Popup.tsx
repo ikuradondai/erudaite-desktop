@@ -13,24 +13,6 @@ export default function Popup() {
   const hasFocusedRef = useRef(false);
   const [isFocused, setIsFocused] = useState(true);
 
-  // #region agent log
-  function agentLog(message: string, data: Record<string, unknown>) {
-    fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: "debug-session",
-        runId: "popup-focus-flag",
-        hypothesisId: "F2",
-        location: "desktop/src/Popup.tsx",
-        message,
-        data,
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-  }
-  // #endregion
-
   const closeSelf = (_reason: string) => {
     const w = getCurrentWebviewWindow();
     // IMPORTANT: `close()` can resolve even if the window stays visible (close-request accepted but not applied).
@@ -49,7 +31,6 @@ export default function Popup() {
 
   useEffect(() => {
     const w = getCurrentWebviewWindow();
-    agentLog("mounted", { label: w.label, href: window.location.href });
     const unlistenDestroyedP = w.listen("tauri://destroyed", () => {});
     const unlistenCloseReqP = w.listen("tauri://close-requested", () => {});
     void emit("erudaite://popup/ready", { label: getCurrentWebviewWindow().label }).catch(() => {});
@@ -91,7 +72,6 @@ export default function Popup() {
     const w = getCurrentWebviewWindow();
     const unsubPromise = w.onFocusChanged(({ payload }) => {
       setIsFocused(payload === true);
-      agentLog("focusChanged", { focused: payload });
       if (payload === true) {
         hasFocusedRef.current = true;
         return;
