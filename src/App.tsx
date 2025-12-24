@@ -88,11 +88,10 @@ function App() {
   const [status, setStatus] = useState<string>("");
   const [sourceText, setSourceText] = useState<string>("");
   const [translatedText, setTranslatedText] = useState<string>("");
-  const [reverseText, setReverseText] = useState<string>("");
   const [detectedLang, setDetectedLang] = useState<string>("");
   const [targetLang, setTargetLang] = useState<string>(""); // computed per strategy; shown in UI
   const [showWizard, setShowWizard] = useState<boolean>(false);
-  const [lastCaptureNote, setLastCaptureNote] = useState<string>("");
+  const [showSettings, setShowSettings] = useState<boolean>(false);
   const hotkeyInFlightRef = useRef(false);
   const lastHotkeyAtRef = useRef(0);
   const translationRunIdRef = useRef(0);
@@ -354,7 +353,7 @@ function App() {
           // ignore
         }
         const msg = e instanceof Error ? e.message : String(e);
-        setLastCaptureNote(`Capture: failed (${msg})`);
+        setStatus(`Capture failed: ${msg}`);
         setStatus("Capture failed. Keep Chrome focused, select text, then press hotkey again.");
         return;
       }
@@ -367,7 +366,7 @@ function App() {
         } catch {
           // ignore
         }
-        setLastCaptureNote("Capture: empty (make sure Chrome is focused, select text, then press hotkey again).");
+        // status already set above
         setStatus("No selected text detected. Select text and press the hotkey again.");
         return;
       }
@@ -377,7 +376,7 @@ function App() {
       emitPopupState({ status: "Translating…", source: picked, translation: "" });
 
       setSourceText(picked);
-      setLastCaptureNote(`Capture: ${picked.length} chars`);
+      // capture note removed
       setStatus("Translating…");
 
       const computeTargetDefaultBased = (detectedLang: string) => {
@@ -553,38 +552,6 @@ function App() {
     setStatus("Copied translation to clipboard.");
   }, [translatedText]);
 
-  const handleReverse = useCallback(async () => {
-    const src = translatedText.trim();
-    if (!src) return;
-    const to = detectedLang.trim();
-    if (!to || to === "Unknown") {
-      setStatus("Cannot reverse-translate: detected language is Unknown.");
-      return;
-    }
-    setStatus("Reverse translating…");
-    setReverseText("");
-    let full = "";
-    const ch = new Channel<{ type: "delta"; content: string } | { type: "done" } | { type: "error"; message: string }>();
-    ch.onmessage = (msg) => {
-      if (msg.type === "delta") {
-        full += msg.content;
-        setReverseText(full);
-      } else if (msg.type === "error") {
-        setStatus(`Error: ${msg.message}`);
-      }
-    };
-    await invoke("translate_sse", {
-      baseUrl: settings.apiBaseUrl,
-      text: src,
-      targetLang: to,
-      mode: "literal",
-      explanationLang: "ja",
-      isReverse: true,
-      onEvent: ch,
-    });
-    setStatus("Done.");
-  }, [detectedLang, settings.apiBaseUrl, translatedText]);
-
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const isCopy = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c";
@@ -637,59 +604,79 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.hotkey, handleHotkey]);
 
-  return (
-    <div style={{ padding: 16, maxWidth: 720, margin: "0 auto" }}>
-      <h2 style={{ margin: "8px 0" }}>ErudAite Shortcut Translator (v0 scaffold)</h2>
+  // Status badge styling
+  const statusBadgeClass = status.toLowerCase().includes("error")
+    ? "status-badge error"
+    : status.toLowerCase().includes("translating") || status.toLowerCase().includes("capturing")
+      ? "status-badge loading"
+      : "status-badge";
 
-      {showWizard && (
-        <div
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: 10,
-            padding: 14,
-            margin: "12px 0",
-            background: "rgba(255,255,255,0.95)",
-          }}
+  return (
+    <div>
+      {/* ====== Header ====== */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: "#1f2937" }}>
+            Welcome to ErudAite Desktop Application
+          </h1>
+          <p style={{ margin: "6px 0 0", fontSize: 13, color: "#6b7280" }}>
+            Press <strong style={{ color: "#4f46e5" }}>{settings.hotkey}</strong> to translate selected text
+          </p>
+        </div>
+        <button
+          className="btn-icon"
+          onClick={() => setShowSettings((v) => !v)}
+          title={showSettings ? "Hide settings" : "Show settings"}
         >
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>Welcome to ErudAite</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 12 }}>
-            Set your native language (Default) and a frequently-used Secondary language. Shortcut translation will route
-            automatically.
+          ⚙️
+        </button>
+      </div>
+
+      {/* ====== Welcome Wizard ====== */}
+      {showWizard && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8, color: "#1f2937" }}>
+            Welcome to ErudAite Desktop Application
           </div>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              Default
+          <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>
+            Set your native language (Default) and a frequently-used Secondary language. Shortcut translation will route automatically.
+          </p>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+              <span style={{ fontWeight: 500, color: "#374151" }}>Default Language</span>
               <input
+                className="input"
                 value={settings.defaultLanguage}
                 onChange={(e) => setSettings((s) => ({ ...s, defaultLanguage: e.target.value }))}
                 style={{ width: 160 }}
               />
             </label>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              Secondary
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+              <span style={{ fontWeight: 500, color: "#374151" }}>Secondary Language</span>
               <input
+                className="input"
                 value={settings.secondaryLanguage}
                 onChange={(e) => setSettings((s) => ({ ...s, secondaryLanguage: e.target.value }))}
                 style={{ width: 180 }}
               />
             </label>
           </div>
-          <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+          <div style={{ marginTop: 16, display: "flex", gap: 10 }}>
             <button
+              className="btn"
               onClick={() => {
                 setSettings((s) => ({ ...s, onboarded: true }));
                 setShowWizard(false);
               }}
-              style={{ padding: "8px 12px" }}
             >
-              Next
+              Get Started
             </button>
             <button
+              className="btn btn-secondary"
               onClick={() => {
                 setSettings((s) => ({ ...s, onboarded: true }));
                 setShowWizard(false);
               }}
-              style={{ padding: "8px 12px", opacity: 0.8 }}
             >
               Skip
             </button>
@@ -697,146 +684,153 @@ function App() {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          Hotkey
-          <input
-            value={settings.hotkey}
-            onChange={(e) => setSettings((s) => ({ ...s, hotkey: e.target.value }))}
-            style={{ width: 280 }}
-          />
-        </label>
+      {/* ====== Collapsible Settings Panel ====== */}
+      <div className={`settings-panel card ${showSettings ? "expanded" : "collapsed"}`} style={{ marginBottom: 20 }}>
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 14, color: "#374151" }}>Settings</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+            <span style={{ fontWeight: 500, color: "#374151" }}>Hotkey</span>
+            <input
+              className="input"
+              value={settings.hotkey}
+              onChange={(e) => setSettings((s) => ({ ...s, hotkey: e.target.value }))}
+              style={{ maxWidth: 300 }}
+            />
+          </label>
 
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          Popup focus on open
-          <input
-            type="checkbox"
-            checked={settings.popupFocusOnOpen}
-            onChange={(e) => setSettings((s) => ({ ...s, popupFocusOnOpen: e.target.checked }))}
-          />
-        </label>
+          <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={settings.popupFocusOnOpen}
+                onChange={(e) => setSettings((s) => ({ ...s, popupFocusOnOpen: e.target.checked }))}
+                style={{ width: 16, height: 16 }}
+              />
+              <span>Focus popup on open</span>
+            </label>
 
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          Auto route (defaultBased)
-          <input
-            type="checkbox"
-            checked={settings.routingStrategy === "defaultBased"}
-            onChange={(e) =>
-              setSettings((s) => ({
-                ...s,
-                routingStrategy: e.target.checked ? "defaultBased" : "alwaysFixed",
-              }))
-            }
-          />
-        </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={settings.routingStrategy === "defaultBased"}
+                onChange={(e) =>
+                  setSettings((s) => ({
+                    ...s,
+                    routingStrategy: e.target.checked ? "defaultBased" : "alwaysFixed",
+                  }))
+                }
+                style={{ width: 16, height: 16 }}
+              />
+              <span>Auto route (detect language)</span>
+            </label>
+          </div>
 
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          Clipboard
-          <select
-            value={settings.clipboardMode}
-            onChange={(e) => setSettings((s) => ({ ...s, clipboardMode: e.target.value as ClipboardMode }))}
-          >
-            <option value="displayOnly">Display only</option>
-            <option value="displayAndCopy">Display + auto copy</option>
-            <option value="copyOnly">Auto copy only</option>
-          </select>
-        </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+            <span style={{ fontWeight: 500, color: "#374151" }}>Clipboard Mode</span>
+            <select
+              className="input"
+              value={settings.clipboardMode}
+              onChange={(e) => setSettings((s) => ({ ...s, clipboardMode: e.target.value as ClipboardMode }))}
+              style={{ maxWidth: 220 }}
+            >
+              <option value="displayOnly">Display only</option>
+              <option value="displayAndCopy">Display + auto copy</option>
+              <option value="copyOnly">Auto copy only</option>
+            </select>
+          </label>
 
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          API
-          <input
-            value={settings.apiBaseUrl}
-            onChange={(e) => setSettings((s) => ({ ...s, apiBaseUrl: e.target.value }))}
-            style={{ width: 260 }}
-          />
-        </label>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+              <span style={{ fontWeight: 500, color: "#374151" }}>Default Language</span>
+              <input
+                className="input"
+                value={settings.defaultLanguage}
+                onChange={(e) => setSettings((s) => ({ ...s, defaultLanguage: e.target.value }))}
+                style={{ width: 150 }}
+              />
+            </label>
 
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          Default
-          <input
-            value={settings.defaultLanguage}
-            onChange={(e) => setSettings((s) => ({ ...s, defaultLanguage: e.target.value }))}
-            style={{ width: 140 }}
-          />
-        </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+              <span style={{ fontWeight: 500, color: "#374151" }}>Secondary Language</span>
+              <input
+                className="input"
+                value={settings.secondaryLanguage}
+                onChange={(e) => setSettings((s) => ({ ...s, secondaryLanguage: e.target.value }))}
+                style={{ width: 160 }}
+              />
+            </label>
 
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          Secondary
-          <input
-            value={settings.secondaryLanguage}
-            onChange={(e) => setSettings((s) => ({ ...s, secondaryLanguage: e.target.value }))}
-            style={{ width: 160 }}
-          />
-        </label>
-
-        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          Target
-          <input
-            value={
-              settings.routingStrategy === "alwaysFixed"
-                ? settings.fixedTargetLang ?? ""
-                : targetLang || settings.lastUsedTargetLang || ""
-            }
-            readOnly={settings.routingStrategy === "defaultBased"}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (settings.routingStrategy === "alwaysFixed") {
-                setSettings((s) => ({ ...s, fixedTargetLang: v }));
-              } else {
-                setTargetLang(v);
-                setSettings((s) => ({ ...s, lastUsedTargetLang: v }));
-              }
-            }}
-            style={{ width: 180 }}
-          />
-        </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+              <span style={{ fontWeight: 500, color: "#374151" }}>Target Language</span>
+              <input
+                className="input"
+                value={
+                  settings.routingStrategy === "alwaysFixed"
+                    ? settings.fixedTargetLang ?? ""
+                    : targetLang || settings.lastUsedTargetLang || ""
+                }
+                readOnly={settings.routingStrategy === "defaultBased"}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (settings.routingStrategy === "alwaysFixed") {
+                    setSettings((s) => ({ ...s, fixedTargetLang: v }));
+                  } else {
+                    setTargetLang(v);
+                    setSettings((s) => ({ ...s, lastUsedTargetLang: v }));
+                  }
+                }}
+                style={{ width: 160 }}
+              />
+            </label>
+          </div>
+        </div>
       </div>
 
-      <div style={{ marginTop: 12, fontSize: 12, opacity: 0.8 }}>{status}</div>
-      {detectedLang ? (
-        <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
-          Detected: {detectedLang} → Target: {targetLang || settings.lastUsedTargetLang || ""}
-        </div>
-      ) : null}
-      {lastCaptureNote ? <div style={{ marginTop: 4, fontSize: 12, opacity: 0.7 }}>{lastCaptureNote}</div> : null}
+      {/* ====== Status Bar ====== */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        {status && <div className={statusBadgeClass}>{status}</div>}
+        {detectedLang && detectedLang !== "Unknown" && (
+          <div style={{ fontSize: 12, color: "#6b7280" }}>
+            {detectedLang} → {targetLang || settings.lastUsedTargetLang || settings.fixedTargetLang || ""}
+          </div>
+        )}
+      </div>
 
-      <div style={{ marginTop: 14 }}>
-        <button onClick={() => void handleHotkey()} style={{ padding: "8px 12px" }}>
-          Test capture/translate (current focused window)
+      {/* ====== Action Buttons ====== */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+        <button className="btn" onClick={() => void handleHotkey()}>
+          🎯 Test Translate
         </button>
         <button
+          className="btn btn-secondary"
           onClick={() => void handleCopy()}
           disabled={!translatedText.trim()}
-          style={{ padding: "8px 12px", marginLeft: 8, opacity: translatedText.trim() ? 1 : 0.5 }}
         >
-          Copy translation
-        </button>
-        <button
-          onClick={() => void handleReverse()}
-          disabled={!translatedText.trim() || !detectedLang.trim() || detectedLang.trim() === "Unknown"}
-          style={{
-            padding: "8px 12px",
-            marginLeft: 8,
-            opacity: translatedText.trim() && detectedLang.trim() && detectedLang.trim() !== "Unknown" ? 1 : 0.5,
-          }}
-        >
-          Reverse
+          📋 Copy
         </button>
       </div>
 
-      <div style={{ marginTop: 16 }}>
-        <div style={{ fontSize: 12, opacity: 0.8 }}>Source</div>
-        <textarea value={sourceText} readOnly style={{ width: "100%", minHeight: 120 }} />
+      {/* ====== Source Text ====== */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 12, fontWeight: 500, color: "#6b7280", marginBottom: 6 }}>Source</div>
+        <textarea
+          className="textarea"
+          value={sourceText}
+          readOnly
+          placeholder="Selected text will appear here..."
+        />
       </div>
 
-      <div style={{ marginTop: 16 }}>
-        <div style={{ fontSize: 12, opacity: 0.8 }}>Translation</div>
-        <textarea value={translatedText} readOnly style={{ width: "100%", minHeight: 140 }} />
-      </div>
-
-      <div style={{ marginTop: 16 }}>
-        <div style={{ fontSize: 12, opacity: 0.8 }}>Reverse</div>
-        <textarea value={reverseText} readOnly style={{ width: "100%", minHeight: 120 }} />
+      {/* ====== Translation Text ====== */}
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 500, color: "#6b7280", marginBottom: 6 }}>Translation</div>
+        <textarea
+          className="textarea"
+          value={translatedText}
+          readOnly
+          placeholder="Translation will appear here..."
+          style={{ minHeight: 140 }}
+        />
       </div>
     </div>
   );

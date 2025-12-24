@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import "./App.css"; // For popup-animate animation
 
 type PopupState = {
   status?: string;
@@ -95,14 +96,15 @@ export default function Popup() {
   // Make focus state obvious WITHOUT drawing an inner border around the text area.
   const chrome = isFocused
     ? { opacity: 1, background: "#ffffff" }
-    : { opacity: 0.72, background: "#f2f2f2" };
+    : { opacity: 0.85, background: "#fafafa" };
 
   return (
     <div
+      className="popup-animate"
       style={{
         width: "100%",
         height: "100%",
-        padding: 12,
+        padding: 14,
         boxSizing: "border-box",
         background: chrome.background,
         borderRadius: 0,
@@ -112,31 +114,57 @@ export default function Popup() {
         overflow: "auto",
         userSelect: "text",
         position: "relative",
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+        transition: "opacity 0.15s ease, background 0.15s ease",
       }}
     >
+      {/* Close button */}
       <button
         onClick={() => closeSelf("button")}
         aria-label="Close"
-        title="Close"
+        title="Close (Esc)"
         style={{
           position: "absolute",
-          top: 6,
-          right: 6,
-          width: 22,
-          height: 22,
+          top: 8,
+          right: 8,
+          width: 24,
+          height: 24,
           padding: 0,
           borderRadius: 6,
-          border: "1px solid rgba(0,0,0,0.18)",
-          background: "rgba(255,255,255,0.9)",
+          border: "none",
+          background: isFocused ? "rgba(0,0,0,0.06)" : "rgba(0,0,0,0.04)",
           cursor: "pointer",
-          lineHeight: "20px",
+          lineHeight: "24px",
           fontSize: 14,
+          color: "#6b7280",
+          transition: "background 0.12s ease, color 0.12s ease",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = "rgba(239, 68, 68, 0.1)";
+          e.currentTarget.style.color = "#dc2626";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = isFocused ? "rgba(0,0,0,0.06)" : "rgba(0,0,0,0.04)";
+          e.currentTarget.style.color = "#6b7280";
         }}
       >
         ×
       </button>
-      <div style={{ fontSize: 13, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-        {state.translation || ""}
+
+      {/* Translation content */}
+      <div
+        style={{
+          fontSize: 14,
+          lineHeight: 1.55,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          color: "#1f2937",
+          paddingRight: 28, // space for close button
+        }}
+      >
+        {state.translation || (
+          <span style={{ color: "#9ca3af", fontStyle: "italic" }}>Translating…</span>
+        )}
       </div>
     </div>
   );
