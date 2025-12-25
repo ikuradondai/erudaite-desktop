@@ -1031,11 +1031,20 @@ function App() {
       // Download + launch installer
       unsubs.push(
         await listen("erudaite://ocr/enable", async () => {
+          // #region agent log
+          dbg("I", "src/App.tsx:ocrEnableListener", "received enable event", {});
+          // #endregion agent log
           try {
             await ensurePopupAtCursor();
             emitPopupState({ status: "Downloading…", translation: "Tesseract インストーラをダウンロードしています…", action: undefined });
             const installerPath = String(await invoke("download_tesseract_installer"));
+            // #region agent log
+            dbg("I", "src/App.tsx:ocrEnableListener", "downloaded installer", { installerPath });
+            // #endregion agent log
             await invoke("launch_installer", { path: installerPath });
+            // #region agent log
+            dbg("I", "src/App.tsx:ocrEnableListener", "launched installer", {});
+            // #endregion agent log
             emitPopupState({
               status: "Installer launched",
               translation:
@@ -1052,8 +1061,14 @@ function App() {
       // Re-detect and (best-effort) resume pending OCR
       unsubs.push(
         await listen("erudaite://ocr/recheck", async () => {
+          // #region agent log
+          dbg("I", "src/App.tsx:ocrRecheckListener", "received recheck event", {});
+          // #endregion agent log
           try {
             const detected = (await invoke("detect_tesseract_path")) as string | null;
+            // #region agent log
+            dbg("I", "src/App.tsx:ocrRecheckListener", "detect result", { detected });
+            // #endregion agent log
             if (!detected) {
               emitPopupState({
                 status: "Not found",

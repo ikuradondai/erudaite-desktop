@@ -4,6 +4,16 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css"; // For popup-animate animation
 
+// #region agent log
+function dbg(hypothesisId: string, location: string, message: string, data: Record<string, unknown> = {}) {
+  fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId: "debug-session", runId: "run1", hypothesisId, location, message, data, timestamp: Date.now() }),
+  }).catch(() => {});
+}
+// #endregion agent log
+
 type PopupState = {
   status?: string;
   source?: string;
@@ -215,7 +225,12 @@ export default function Popup() {
             {state.action === "enable_ocr" && (
               <button
                 type="button"
-                onClick={() => void emit("erudaite://ocr/enable", {})}
+                onClick={() => {
+                  // #region agent log
+                  dbg("I", "src/Popup.tsx:actions", "click enable_ocr", {});
+                  // #endregion agent log
+                  void emit("erudaite://ocr/enable", {}).catch(() => {});
+                }}
                 style={{
                   fontSize: 12,
                   padding: "8px 10px",
@@ -232,7 +247,12 @@ export default function Popup() {
             {state.action === "recheck_ocr" && (
               <button
                 type="button"
-                onClick={() => void emit("erudaite://ocr/recheck", {})}
+                onClick={() => {
+                  // #region agent log
+                  dbg("I", "src/Popup.tsx:actions", "click recheck_ocr", {});
+                  // #endregion agent log
+                  void emit("erudaite://ocr/recheck", {}).catch(() => {});
+                }}
                 style={{
                   fontSize: 12,
                   padding: "8px 10px",

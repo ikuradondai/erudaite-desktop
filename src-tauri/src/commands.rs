@@ -627,6 +627,9 @@ pub async fn ocr_tesseract(image_path: String, lang: Option<String>, tesseract_p
 pub async fn download_tesseract_installer() -> Result<String, String> {
   #[cfg(windows)]
   {
+    // #region agent log
+    agent_log("I", "download_tesseract_installer enter", serde_json::json!({}));
+    // #endregion agent log
     // NOTE: Try multiple known URL patterns (the official distribution changes occasionally).
     // We pin a known filename but keep fallbacks.
     let urls = [
@@ -636,6 +639,9 @@ pub async fn download_tesseract_installer() -> Result<String, String> {
 
     let mut last_err = None;
     for url in urls {
+      // #region agent log
+      agent_log("I", "download_tesseract_installer try", serde_json::json!({ "url": url }));
+      // #endregion agent log
       let res = reqwest::get(url).await;
       let res = match res {
         Ok(r) => r,
@@ -653,6 +659,9 @@ pub async fn download_tesseract_installer() -> Result<String, String> {
       let mut out_path = std::env::temp_dir();
       out_path.push("erudaite-tesseract-installer.exe");
       std::fs::write(&out_path, &bytes).map_err(|e| format!("write installer failed: {e}"))?;
+      // #region agent log
+      agent_log("I", "download_tesseract_installer ok", serde_json::json!({ "path": out_path.to_string_lossy() }));
+      // #endregion agent log
       return Ok(out_path.to_string_lossy().to_string());
     }
     Err(last_err.unwrap_or_else(|| "download failed".to_string()))
@@ -668,9 +677,15 @@ pub async fn download_tesseract_installer() -> Result<String, String> {
 pub async fn launch_installer(path: String) -> Result<(), String> {
   #[cfg(windows)]
   {
+    // #region agent log
+    agent_log("I", "launch_installer enter", serde_json::json!({ "path": path }));
+    // #endregion agent log
     std::process::Command::new(path)
       .spawn()
       .map_err(|e| format!("failed to launch installer: {e}"))?;
+    // #region agent log
+    agent_log("I", "launch_installer ok", serde_json::json!({}));
+    // #endregion agent log
     Ok(())
   }
 
