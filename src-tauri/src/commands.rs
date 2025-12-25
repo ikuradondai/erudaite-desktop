@@ -637,34 +637,72 @@ pub async fn download_tesseract_installer() -> Result<String, String> {
       "https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-v5.5.0.20241111.exe",
     ];
 
+    let client = reqwest::Client::builder()
+      .timeout(std::time::Duration::from_secs(60))
+      .build()
+      .map_err(|e| format!("client build failed: {e}"))?;
+
     let mut last_err = None;
     for url in urls {
       // #region agent log
       agent_log("I", "download_tesseract_installer try", serde_json::json!({ "url": url }));
       // #endregion agent log
-      let res = reqwest::get(url).await;
+      let res = client.get(url).send().await;
       let res = match res {
         Ok(r) => r,
         Err(e) => {
-          last_err = Some(format!("download failed: {e}"));
+          let msg = format!("download failed: {e}");
+          // #region agent log
+          agent_log("I", "download_tesseract_installer req error", serde_json::json!({ "url": url, "error": msg }));
+          // #endregion agent log
+          last_err = Some(msg);
           continue;
         }
       };
-      if !res.status().is_success() {
-        last_err = Some(format!("download failed: http {}", res.status()));
+      let status = res.status();
+      if !status.is_success() {
+        let msg = format!("download failed: http {}", status);
+        // #region agent log
+        agent_log("I", "download_tesseract_installer http error", serde_json::json!({ "url": url, "status": status.as_u16() }));
+        // #endregion agent log
+        last_err = Some(msg);
         continue;
       }
-      let bytes = res.bytes().await.map_err(|e| format!("download read failed: {e}"))?;
+      let bytes = match res.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+          let msg = format!("download read failed: {e}");
+          // #region agent log
+          agent_log("I", "download_tesseract_installer read error", serde_json::json!({ "url": url, "error": msg }));
+          // #endregion agent log
+          last_err = Some(msg);
+          continue;
+        }
+      };
+      // #region agent log
+      agent_log("I", "download_tesseract_installer downloaded", serde_json::json!({ "url": url, "bytes": bytes.len() }));
+      // #endregion agent log
 
       let mut out_path = std::env::temp_dir();
       out_path.push("erudaite-tesseract-installer.exe");
-      std::fs::write(&out_path, &bytes).map_err(|e| format!("write installer failed: {e}"))?;
+      if let Err(e) = std::fs::write(&out_path, &bytes) {
+        let msg = format!("write installer failed: {e}");
+        // #region agent log
+        agent_log("I", "download_tesseract_installer write error", serde_json::json!({ "error": msg }));
+        // #endregion agent log
+        last_err = Some(msg);
+        continue;
+      }
       // #region agent log
       agent_log("I", "download_tesseract_installer ok", serde_json::json!({ "path": out_path.to_string_lossy() }));
       // #endregion agent log
       return Ok(out_path.to_string_lossy().to_string());
     }
-    Err(last_err.unwrap_or_else(|| "download failed".to_string()))
+    let final_err = last_err.unwrap_or_else(|| "download failed".to_string());
+    // #region agent log
+    agent_log("I", "download_tesseract_installer final fail", serde_json::json!({ "error": final_err }));
+    // #endregion agent log
+    Err(final_err)
   }
 
   #[cfg(not(windows))]
