@@ -528,12 +528,32 @@ pub async fn capture_screen_region(rect: CaptureRect) -> Result<String, String> 
 pub async fn detect_tesseract_path() -> Result<Option<String>, String> {
   #[cfg(windows)]
   {
-    let candidates = [
+    // #region agent log
+    agent_log("G", "detect_tesseract_path enter", serde_json::json!({}));
+    // #endregion agent log
+
+    let mut candidates: Vec<String> = vec![
       r"C:\Program Files\Tesseract-OCR\tesseract.exe",
       r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-    ];
-    for p in candidates {
+      // Chocolatey
+      r"C:\ProgramData\chocolatey\bin\tesseract.exe",
+      // Common portable locations
+      r"C:\tools\Tesseract-OCR\tesseract.exe",
+    ]
+    .into_iter()
+    .map(|s| s.to_string())
+    .collect();
+
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+      // e.g. C:\Users\<user>\AppData\Local\Programs\Tesseract-OCR\tesseract.exe
+      candidates.push(format!(r"{}\Programs\Tesseract-OCR\tesseract.exe", local));
+    }
+
+    for p in &candidates {
       if std::path::Path::new(p).exists() {
+        // #region agent log
+        agent_log("G", "detect_tesseract_path found candidate", serde_json::json!({ "path": p }));
+        // #endregion agent log
         return Ok(Some(p.to_string()));
       }
     }
@@ -544,11 +564,17 @@ pub async fn detect_tesseract_path() -> Result<Option<String>, String> {
         let s = String::from_utf8_lossy(&out.stdout);
         if let Some(line) = s.lines().map(|l| l.trim()).find(|l| !l.is_empty()) {
           if std::path::Path::new(line).exists() {
+            // #region agent log
+            agent_log("G", "detect_tesseract_path found via where", serde_json::json!({ "path": line }));
+            // #endregion agent log
             return Ok(Some(line.to_string()));
           }
         }
       }
     }
+    // #region agent log
+    agent_log("G", "detect_tesseract_path none", serde_json::json!({ "candidateCount": candidates.len() }));
+    // #endregion agent log
     Ok(None)
   }
 
