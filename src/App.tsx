@@ -846,6 +846,13 @@ function App() {
 
           let ocrText = "";
           try {
+            // #region agent log
+            dbg("G", "src/App.tsx:ocrSelectedListener", "invoke ocr_tesseract start", {
+              imagePath,
+              lang: settings.ocrLang ?? "jpn+eng",
+              hasExplicitTesseractPath: Boolean((settings.tesseractPath ?? "").trim()),
+            });
+            // #endregion agent log
             ocrText = String(
               await invoke("ocr_tesseract", {
                 imagePath,
@@ -853,8 +860,14 @@ function App() {
                 tesseractPath: settings.tesseractPath ?? null,
               }),
             ).trim();
+            // #region agent log
+            dbg("G", "src/App.tsx:ocrSelectedListener", "invoke ocr_tesseract success", { ocrTextLen: ocrText.length });
+            // #endregion agent log
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
+            // #region agent log
+            dbg("G", "src/App.tsx:ocrSelectedListener", "invoke ocr_tesseract failed", { error: msg });
+            // #endregion agent log
             pendingOcrImagePathRef.current = imagePath;
             emitPopupState({
               status: "OCR failed",
@@ -869,6 +882,9 @@ function App() {
           }
 
           if (!ocrText) {
+            // #region agent log
+            dbg("G", "src/App.tsx:ocrSelectedListener", "ocr empty result", {});
+            // #endregion agent log
             emitPopupState({
               status: "No text detected",
               source: "",
@@ -894,6 +910,9 @@ function App() {
             setTargetLang(target);
             setTranslatedText("");
             emitPopupState({ status: "Translating…", source: picked, translation: "…" });
+            // #region agent log
+            dbg("H", "src/App.tsx:ocrSelectedListener", "translate start", { runId, target, sourceLen: picked.length });
+            // #endregion agent log
             const ch = new Channel<
               { type: "delta"; content: string } | { type: "done" } | { type: "error"; message: string }
             >();
@@ -904,6 +923,9 @@ function App() {
                 setTranslatedText(full);
                 emitPopupState({ status: "Translating…", translation: full });
               } else if (msg.type === "error") {
+                // #region agent log
+                dbg("H", "src/App.tsx:ocrSelectedListener", "translate error event", { runId, target, message: msg.message });
+                // #endregion agent log
                 setStatus(`Error: ${msg.message}`);
                 emitPopupState({ status: `Error: ${msg.message}` });
               }
@@ -918,6 +940,9 @@ function App() {
                 isReverse: false,
                 onEvent: ch,
               });
+              // #region agent log
+              dbg("H", "src/App.tsx:ocrSelectedListener", "translate invoke completed", { runId, target, fullLen: full.length });
+              // #endregion agent log
               return full;
             })();
             return { runId, target, donePromise };
