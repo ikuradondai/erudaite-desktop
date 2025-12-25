@@ -832,6 +832,7 @@ function App() {
       return await listen<{ x: number; y: number; width: number; height: number }>("erudaite://ocr/selected", async (e) => {
         const { x, y, width, height } = e.payload ?? ({} as any);
         if (!width || !height) return;
+        dbg("F", "src/App.tsx:ocrSelectedListener", "received rect", { x, y, width, height });
         try {
           await ensurePopupAtCursor();
           emitPopupState({ status: "OCR…", source: "", translation: "…" });
@@ -841,6 +842,7 @@ function App() {
               rect: { x: Math.floor(x), y: Math.floor(y), width: Math.floor(width), height: Math.floor(height) },
             }),
           );
+          dbg("F", "src/App.tsx:ocrSelectedListener", "captured image", { imagePath });
 
           let ocrText = "";
           try {

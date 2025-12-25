@@ -108,7 +108,13 @@ export default function OcrOverlay() {
     } satisfies RectPayload;
 
     dbg("D", "src/OcrOverlay.tsx:endDrag", "emit rect", { rect, phys, scale, origin });
-    await emit<RectPayload>("erudaite://ocr/selected", phys).catch(() => {});
+    await emit<RectPayload>("erudaite://ocr/selected", phys)
+      .then(() => {
+        dbg("E", "src/OcrOverlay.tsx:endDrag", "emit success", {});
+      })
+      .catch((e) => {
+        dbg("E", "src/OcrOverlay.tsx:endDrag", "emit failed", { error: e instanceof Error ? e.message : String(e) });
+      });
     await getCurrentWindow().destroy().catch(() => {});
   };
 
