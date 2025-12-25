@@ -15,6 +15,7 @@ type RoutingStrategy = "defaultBased" | "alwaysLastUsed" | "alwaysFixed";
 
 type Settings = {
   hotkey: string; // e.g. "CommandOrControl+Shift+E"
+  ocrHotkey: string; // e.g. "CommandOrControl+Shift+Alt+X"
   clipboardMode: ClipboardMode;
   apiBaseUrl: string; // e.g. "https://lighting-translation.vercel.app"
   defaultLanguage: string; // e.g. "Japanese"
@@ -24,6 +25,9 @@ type Settings = {
   lastUsedTargetLang?: string;
   onboarded?: boolean;
   favoritePairs?: Array<{ from: string; to: string }>;
+  // OCR (external Tesseract)
+  ocrLang?: string; // default "jpn+eng"
+  tesseractPath?: string; // optional absolute path to tesseract.exe
 };
 
 // デフォルト言語として選択可能な6言語
@@ -127,6 +131,7 @@ const DEFAULT_SETTINGS: Settings = {
   // - Use a single, consistent default across Windows/macOS to reduce confusion.
   // - Avoid common app/browser conflicts by using 3 modifiers + a letter.
   hotkey: "CommandOrControl+Shift+Alt+Z",
+  ocrHotkey: "CommandOrControl+Shift+Alt+X",
   clipboardMode: "displayOnly",
   apiBaseUrl: "https://lighting-translation.vercel.app",
   defaultLanguage: "Japanese",
@@ -134,6 +139,7 @@ const DEFAULT_SETTINGS: Settings = {
   routingStrategy: "alwaysFixed",
   popupFocusOnOpen: true,
   onboarded: false,
+  ocrLang: "jpn+eng",
   favoritePairs: [
     { from: "English (US)", to: "Japanese" },
     { from: "Japanese", to: "English (US)" },
@@ -243,14 +249,17 @@ function App() {
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [showAutoRouteHelp, setShowAutoRouteHelp] = useState<boolean>(false);
   const hotkeyInFlightRef = useRef(false);
+  const ocrHotkeyInFlightRef = useRef(false);
   const lastHotkeyAtRef = useRef(0);
   const translationRunIdRef = useRef(0);
   const popupRef = useRef<WebviewWindow | null>(null);
-  const lastPopupStateRef = useRef<{ status?: string; source?: string; translation?: string }>({
+  const overlayRef = useRef<WebviewWindow | null>(null);
+  const lastPopupStateRef = useRef<{ status?: string; source?: string; translation?: string; action?: string }>({
     status: "Translating…",
     source: "",
     translation: "",
   });
+  const pendingOcrImagePathRef = useRef<string | null>(null);
   const storePromise = useMemo(
     () =>
       load("settings.json", {
@@ -307,7 +316,7 @@ function App() {
   }, [settings, storePromise]);
 
   const emitPopupState = useCallback(
-    (partial: { status?: string; source?: string; translation?: string }) => {
+    (partial: { status?: string; source?: string; translation?: string; action?: string }) => {
       lastPopupStateRef.current = { ...lastPopupStateRef.current, ...partial };
       const payload = lastPopupStateRef.current;
       void emitTo("popup", "erudaite://popup/state", payload)
@@ -479,6 +488,64 @@ function App() {
 
     return popup;
   }, [emitPopupState, settings.popupFocusOnOpen]);
+
+  const closeOverlayIfOpen = useCallback(async () => {
+    let w: WebviewWindow | null = overlayRef.current;
+    if (!w) {
+      try {
+        w = await WebviewWindow.getByLabel("ocr-overlay");
+      } catch {
+        w = null;
+      }
+    }
+    if (!w) return false;
+    try {
+      await w.destroy();
+    } catch {
+      // ignore
+    }
+    overlayRef.current = null;
+    return true;
+  }, []);
+
+  const openOcrOverlayOnCurrentMonitor = useCallback(async () => {
+    // Toggle behavior: if overlay is open, close it.
+    const closed = await closeOverlayIfOpen();
+    if (closed) return;
+
+    const cursor = (await invoke("get_cursor_position")) as { x: number; y: number };
+    const m = await monitorFromPoint(cursor.x, cursor.y);
+    if (!m) throw new Error("monitor not found");
+
+    const ox = m.position.x;
+    const oy = m.position.y;
+    const ow = m.size.width;
+    const oh = m.size.height;
+
+    const overlayUrl = window.location.protocol.startsWith("http")
+      ? `${window.location.origin}/#/ocr-overlay`
+      : "index.html#/ocr-overlay";
+
+    const overlay = new WebviewWindow("ocr-overlay", {
+      url: overlayUrl,
+      x: ox,
+      y: oy,
+      width: ow,
+      height: oh,
+      resizable: false,
+      decorations: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      focus: true,
+      visible: true,
+      shadow: false,
+    });
+    overlayRef.current = overlay;
+    overlay.once("tauri://destroyed", () => {
+      overlayRef.current = null;
+    });
+  }, [closeOverlayIfOpen]);
 
   const handleHotkey = useCallback(async () => {
     const now = Date.now();
@@ -716,6 +783,250 @@ function App() {
     translatedText,
   ]);
 
+  const handleOcrHotkey = useCallback(async () => {
+    if (ocrHotkeyInFlightRef.current) return;
+    ocrHotkeyInFlightRef.current = true;
+    try {
+      await openOcrOverlayOnCurrentMonitor();
+      setStatus("OCR: select an area…");
+    } catch (e) {
+      setStatus(`OCR hotkey error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      // release quickly; the actual OCR flow is triggered by overlay events
+      ocrHotkeyInFlightRef.current = false;
+    }
+  }, [openOcrOverlayOnCurrentMonitor]);
+
+  useEffect(() => {
+    const unlistenPromise = (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      return await listen<{ x: number; y: number; width: number; height: number }>("erudaite://ocr/selected", async (e) => {
+        const { x, y, width, height } = e.payload ?? ({} as any);
+        if (!width || !height) return;
+        try {
+          await ensurePopupAtCursor();
+          emitPopupState({ status: "OCR…", source: "", translation: "…" });
+
+          const imagePath = String(
+            await invoke("capture_screen_region", {
+              rect: { x: Math.floor(x), y: Math.floor(y), width: Math.floor(width), height: Math.floor(height) },
+            }),
+          );
+
+          let ocrText = "";
+          try {
+            ocrText = String(
+              await invoke("ocr_tesseract", {
+                imagePath,
+                lang: settings.ocrLang ?? "jpn+eng",
+                tesseractPath: settings.tesseractPath ?? null,
+              }),
+            ).trim();
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            pendingOcrImagePathRef.current = imagePath;
+            emitPopupState({
+              status: "OCR failed",
+              source: "",
+              translation:
+                msg.includes("TESSERACT_NOT_FOUND")
+                  ? "Tesseract OCR が見つかりません。\n\n「OCRを有効化（推奨）」を押してインストールしてください。"
+                  : `OCRに失敗しました。\n\n${msg}`,
+              action: msg.includes("TESSERACT_NOT_FOUND") ? "enable_ocr" : undefined,
+            });
+            return;
+          }
+
+          if (!ocrText) {
+            emitPopupState({
+              status: "No text detected",
+              source: "",
+              translation: "文字が検出できませんでした。範囲を変えてもう一度試してください。",
+            });
+            return;
+          }
+
+          // Reuse existing translation pipeline: set picked as source, then translate via SSE
+          setSourceText(ocrText);
+          emitPopupState({ status: "Translating…", source: ocrText, translation: "…" });
+
+          // Kick translation using the same routing rules as selection-translate
+          // (Minimal duplication: we call the existing handler by temporarily setting clipboard/source state)
+          // NOTE: We invoke translate_sse directly here using the same logic in handleHotkey.
+          const picked = ocrText;
+          const computeTargetDefaultBased = (detectedLang: string) => {
+            return isSameLanguage(detectedLang, settings.defaultLanguage) ? settings.secondaryLanguage : settings.defaultLanguage;
+          };
+          const runTranslate = (target: string) => {
+            const runId = ++translationRunIdRef.current;
+            let full = "";
+            setTargetLang(target);
+            setTranslatedText("");
+            emitPopupState({ status: "Translating…", source: picked, translation: "…" });
+            const ch = new Channel<
+              { type: "delta"; content: string } | { type: "done" } | { type: "error"; message: string }
+            >();
+            ch.onmessage = (msg) => {
+              if (runId !== translationRunIdRef.current) return;
+              if (msg.type === "delta") {
+                full += msg.content;
+                setTranslatedText(full);
+                emitPopupState({ status: "Translating…", translation: full });
+              } else if (msg.type === "error") {
+                setStatus(`Error: ${msg.message}`);
+                emitPopupState({ status: `Error: ${msg.message}` });
+              }
+            };
+            const donePromise = (async () => {
+              await invoke("translate_sse", {
+                baseUrl: settings.apiBaseUrl,
+                text: picked,
+                targetLang: target,
+                mode: "standard",
+                explanationLang: "ja",
+                isReverse: false,
+                onEvent: ch,
+              });
+              return full;
+            })();
+            return { runId, target, donePromise };
+          };
+
+          let detectedForUi = "Unknown";
+          let active = { runId: 0, target: "", donePromise: Promise.resolve("") as Promise<string> };
+          if (settings.routingStrategy === "alwaysFixed") {
+            const target = normalizeLangCode(settings.defaultLanguage, DEFAULT_SETTINGS.defaultLanguage);
+            active = runTranslate(target);
+            void (async () => {
+              try {
+                const r = (await invoke("detect_language", { baseUrl: settings.apiBaseUrl, text: picked })) as {
+                  detected_lang?: string;
+                };
+                detectedForUi = String(r?.detected_lang ?? "Unknown");
+              } catch {}
+              setDetectedLang(detectedForUi);
+            })();
+          } else if (settings.routingStrategy === "alwaysLastUsed") {
+            const target = normalizeLangCode(settings.lastUsedTargetLang, settings.defaultLanguage);
+            active = runTranslate(target);
+            void (async () => {
+              try {
+                const r = (await invoke("detect_language", { baseUrl: settings.apiBaseUrl, text: picked })) as {
+                  detected_lang?: string;
+                };
+                detectedForUi = String(r?.detected_lang ?? "Unknown");
+              } catch {}
+              setDetectedLang(detectedForUi);
+            })();
+          } else {
+            const kind = guessDetectedLangHeuristic(picked, settings.defaultLanguage);
+            const heuristicDetected = kind === "default" ? settings.defaultLanguage : "Unknown";
+            const target0 = kind === "default" ? settings.secondaryLanguage : settings.defaultLanguage;
+            active = runTranslate(target0);
+            try {
+              const r = (await invoke("detect_language", { baseUrl: settings.apiBaseUrl, text: picked })) as {
+                detected_lang?: string;
+              };
+              detectedForUi = String(r?.detected_lang ?? heuristicDetected ?? "Unknown");
+            } catch {
+              detectedForUi = heuristicDetected ?? "Unknown";
+            }
+            setDetectedLang(detectedForUi);
+            if (detectedForUi !== "Unknown") {
+              const targetReal = computeTargetDefaultBased(detectedForUi);
+              if (targetReal !== active.target) active = runTranslate(targetReal);
+            }
+          }
+
+          const full = await active.donePromise;
+          setSettings((s) => ({ ...s, lastUsedTargetLang: active.target }));
+          if (settings.clipboardMode === "displayAndCopy" || settings.clipboardMode === "copyOnly") {
+            await writeText(full || "");
+          }
+          emitPopupState({ status: "Done." });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setStatus(`OCR error: ${msg}`);
+          emitPopupState({ status: `OCR error: ${msg}` });
+        }
+      });
+    })();
+    return () => {
+      void unlistenPromise.then((u) => u()).catch(() => {});
+    };
+  }, [
+    emitPopupState,
+    ensurePopupAtCursor,
+    settings.apiBaseUrl,
+    settings.clipboardMode,
+    settings.defaultLanguage,
+    settings.lastUsedTargetLang,
+    settings.ocrLang,
+    settings.routingStrategy,
+    settings.secondaryLanguage,
+    settings.tesseractPath,
+  ]);
+
+  useEffect(() => {
+    const unlistenPromise = (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      const unsubs: Array<() => void> = [];
+
+      // Download + launch installer
+      unsubs.push(
+        await listen("erudaite://ocr/enable", async () => {
+          try {
+            await ensurePopupAtCursor();
+            emitPopupState({ status: "Downloading…", translation: "Tesseract インストーラをダウンロードしています…", action: undefined });
+            const installerPath = String(await invoke("download_tesseract_installer"));
+            await invoke("launch_installer", { path: installerPath });
+            emitPopupState({
+              status: "Installer launched",
+              translation:
+                "インストーラを起動しました。\n\nインストールが完了したら、下の「再検出」を押してください。",
+              action: "recheck_ocr",
+            });
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            emitPopupState({ status: "Install failed", translation: `インストールの準備に失敗しました。\n\n${msg}`, action: undefined });
+          }
+        }),
+      );
+
+      // Re-detect and (best-effort) resume pending OCR
+      unsubs.push(
+        await listen("erudaite://ocr/recheck", async () => {
+          try {
+            const detected = (await invoke("detect_tesseract_path")) as string | null;
+            if (!detected) {
+              emitPopupState({
+                status: "Not found",
+                translation: "まだTesseractが見つかりません。インストール完了後にもう一度「再検出」を押してください。",
+                action: "recheck_ocr",
+              });
+              return;
+            }
+            setSettings((s) => ({ ...s, tesseractPath: detected }));
+            emitPopupState({ status: "Ready", translation: "Tesseract を検出しました。もう一度OCRホットキーを押してください。", action: undefined });
+
+            // Clear any pending OCR; user can retry via hotkey for a fresh capture.
+            pendingOcrImagePathRef.current = null;
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            emitPopupState({ status: "Recheck failed", translation: `再検出に失敗しました。\n\n${msg}`, action: "recheck_ocr" });
+          }
+        }),
+      );
+
+      return () => {
+        for (const u of unsubs) u();
+      };
+    })();
+    return () => {
+      void unlistenPromise.then((u) => u()).catch(() => {});
+    };
+  }, [emitPopupState, ensurePopupAtCursor, settings.ocrLang]);
+
   useEffect(() => {
     const unlistenPromise = (async () => {
       const { listen } = await import("@tauri-apps/api/event");
@@ -762,7 +1073,10 @@ function App() {
           // fire-and-forget; we keep UI responsive
           void handleHotkey();
         });
-        setStatus(`Hotkey registered: ${settings.hotkey}`);
+        await register(settings.ocrHotkey, () => {
+          void handleOcrHotkey();
+        });
+        setStatus(`Hotkeys registered: ${settings.hotkey} / ${settings.ocrHotkey}`);
       } catch (e) {
         // fallback
         if (settings.hotkey !== FALLBACK_HOTKEY) {
@@ -785,7 +1099,7 @@ function App() {
       void unregisterAll();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.hotkey, handleHotkey]);
+  }, [settings.hotkey, settings.ocrHotkey, handleHotkey, handleOcrHotkey]);
 
   const isAutoRouting = settings.routingStrategy === "defaultBased";
   const activeLabelColor = "#374151";
@@ -894,6 +1208,39 @@ function App() {
               value={settings.hotkey}
               onChange={(e) => setSettings((s) => ({ ...s, hotkey: e.target.value }))}
               style={{ maxWidth: 300 }}
+            />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+            <span style={{ fontWeight: 500, color: "#374151" }}>OCRホットキー</span>
+            <input
+              className="input"
+              value={settings.ocrHotkey}
+              onChange={(e) => setSettings((s) => ({ ...s, ocrHotkey: e.target.value }))}
+              style={{ maxWidth: 300 }}
+            />
+            <span style={{ fontSize: 12, color: "#6b7280" }}>範囲選択 → OCR → 翻訳</span>
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+            <span style={{ fontWeight: 500, color: "#374151" }}>Tesseractパス（任意）</span>
+            <input
+              className="input"
+              value={settings.tesseractPath ?? ""}
+              onChange={(e) => setSettings((s) => ({ ...s, tesseractPath: e.target.value || undefined }))}
+              placeholder='例: C:\Program Files\Tesseract-OCR\tesseract.exe'
+              style={{ maxWidth: 520 }}
+            />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+            <span style={{ fontWeight: 500, color: "#374151" }}>OCR言語（Tesseract）</span>
+            <input
+              className="input"
+              value={settings.ocrLang ?? "jpn+eng"}
+              onChange={(e) => setSettings((s) => ({ ...s, ocrLang: e.target.value || undefined }))}
+              placeholder="jpn+eng"
+              style={{ maxWidth: 220 }}
             />
           </label>
 

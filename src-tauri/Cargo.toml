@@ -30,9 +30,10 @@ tauri-plugin-store = "2"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 arboard = "3"
 enigo = "0.2"
+png = "0.17"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
+windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_Graphics_Gdi"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.24"

@@ -6,13 +6,16 @@ import "./App.css"; // For popup-animate animation
 
 type PopupState = {
   status?: string;
+  source?: string;
   translation?: string;
+  action?: "enable_ocr" | "recheck_ocr";
 };
 
 export default function Popup() {
   const [state, setState] = useState<PopupState>({ status: "Translating…", translation: "" });
   const hasFocusedRef = useRef(false);
   const [isFocused, setIsFocused] = useState(true);
+  const [showSource, setShowSource] = useState(false);
 
   const closeSelf = (_reason: string) => {
     const w = getCurrentWebviewWindow();
@@ -162,8 +165,88 @@ export default function Popup() {
           paddingRight: 28, // space for close button
         }}
       >
+        {state.status && (
+          <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>
+            {state.status}
+          </div>
+        )}
+
         {state.translation || (
           <span style={{ color: "#9ca3af", fontStyle: "italic" }}>Translating…</span>
+        )}
+
+        {state.source && (
+          <div style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              onClick={() => setShowSource((v) => !v)}
+              style={{
+                fontSize: 12,
+                padding: "6px 8px",
+                borderRadius: 8,
+                border: "1px solid rgba(0,0,0,0.12)",
+                background: "rgba(0,0,0,0.02)",
+                cursor: "pointer",
+              }}
+            >
+              {showSource ? "原文を隠す" : "原文を表示"}
+            </button>
+            {showSource && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: 10,
+                  borderRadius: 10,
+                  border: "1px solid rgba(0,0,0,0.08)",
+                  background: "rgba(0,0,0,0.02)",
+                  fontSize: 12,
+                  color: "#374151",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {state.source}
+              </div>
+            )}
+          </div>
+        )}
+
+        {(state.action === "enable_ocr" || state.action === "recheck_ocr") && (
+          <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {state.action === "enable_ocr" && (
+              <button
+                type="button"
+                onClick={() => void emit("erudaite://ocr/enable", {})}
+                style={{
+                  fontSize: 12,
+                  padding: "8px 10px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#2a6478",
+                  color: "white",
+                  cursor: "pointer",
+                }}
+              >
+                OCRを有効化（推奨）
+              </button>
+            )}
+            {state.action === "recheck_ocr" && (
+              <button
+                type="button"
+                onClick={() => void emit("erudaite://ocr/recheck", {})}
+                style={{
+                  fontSize: 12,
+                  padding: "8px 10px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(0,0,0,0.12)",
+                  background: "white",
+                  color: "#111827",
+                  cursor: "pointer",
+                }}
+              >
+                再検出
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

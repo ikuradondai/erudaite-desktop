@@ -1,10 +1,17 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 // (no hashing needed)
 #[cfg(windows)]
 use windows_sys::Win32::Foundation::POINT;
 #[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::HWND;
+#[cfg(windows)]
+use windows_sys::Win32::Graphics::Gdi::{
+  BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits, ReleaseDC,
+  SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CAPTUREBLT, DIB_RGB_COLORS, HBITMAP, HDC, SRCCOPY,
+};
 #[cfg(target_os = "macos")]
 use core_graphics::event::CGEvent;
 #[cfg(target_os = "macos")]
@@ -36,6 +43,14 @@ pub struct DetectResult {
 pub struct CursorPosition {
   pub x: i32,
   pub y: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CaptureRect {
+  pub x: i32,
+  pub y: i32,
+  pub width: u32,
+  pub height: u32,
 }
 
 #[tauri::command]
@@ -359,6 +374,253 @@ pub async fn translate_sse(
 
   let _ = on_event.send(StreamEvent::Done);
   Ok(())
+}
+
+#[tauri::command]
+pub async fn capture_screen_region(rect: CaptureRect) -> Result<String, String> {
+  #[cfg(windows)]
+  {
+    if rect.width == 0 || rect.height == 0 {
+      return Err("invalid rect".to_string());
+    }
+
+    unsafe {
+      let screen_dc: HDC = GetDC(0 as HWND);
+      if screen_dc.is_null() {
+        return Err("GetDC failed".to_string());
+      }
+      let mem_dc: HDC = CreateCompatibleDC(screen_dc);
+      if mem_dc.is_null() {
+        let _ = ReleaseDC(0 as HWND, screen_dc);
+        return Err("CreateCompatibleDC failed".to_string());
+      }
+      let bmp: HBITMAP = CreateCompatibleBitmap(screen_dc, rect.width as i32, rect.height as i32);
+      if bmp.is_null() {
+        let _ = DeleteDC(mem_dc);
+        let _ = ReleaseDC(0 as HWND, screen_dc);
+        return Err("CreateCompatibleBitmap failed".to_string());
+      }
+
+      let old = SelectObject(mem_dc, bmp as _);
+      if old.is_null() {
+        let _ = DeleteObject(bmp as _);
+        let _ = DeleteDC(mem_dc);
+        let _ = ReleaseDC(0 as HWND, screen_dc);
+        return Err("SelectObject failed".to_string());
+      }
+
+      let ok = BitBlt(
+        mem_dc,
+        0,
+        0,
+        rect.width as i32,
+        rect.height as i32,
+        screen_dc,
+        rect.x,
+        rect.y,
+        SRCCOPY | CAPTUREBLT,
+      );
+      if ok == 0 {
+        let _ = SelectObject(mem_dc, old);
+        let _ = DeleteObject(bmp as _);
+        let _ = DeleteDC(mem_dc);
+        let _ = ReleaseDC(0 as HWND, screen_dc);
+        return Err("BitBlt failed".to_string());
+      }
+
+      // Prepare 32-bit BGRA DIB
+      let mut bmi: BITMAPINFO = std::mem::zeroed();
+      bmi.bmiHeader = BITMAPINFOHEADER {
+        biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+        biWidth: rect.width as i32,
+        biHeight: -(rect.height as i32), // top-down
+        biPlanes: 1,
+        biBitCount: 32,
+        biCompression: BI_RGB,
+        biSizeImage: 0,
+        biXPelsPerMeter: 0,
+        biYPelsPerMeter: 0,
+        biClrUsed: 0,
+        biClrImportant: 0,
+      };
+
+      let mut bgra = vec![0u8; rect.width as usize * rect.height as usize * 4];
+      let lines = GetDIBits(
+        mem_dc,
+        bmp,
+        0,
+        rect.height as u32,
+        bgra.as_mut_ptr() as *mut _,
+        &mut bmi as *mut _,
+        DIB_RGB_COLORS,
+      );
+      // cleanup GDI
+      let _ = SelectObject(mem_dc, old);
+      let _ = DeleteObject(bmp as _);
+      let _ = DeleteDC(mem_dc);
+      let _ = ReleaseDC(0 as HWND, screen_dc);
+
+      if lines == 0 {
+        return Err("GetDIBits failed".to_string());
+      }
+
+      // Convert BGRA -> RGBA
+      for px in bgra.chunks_exact_mut(4) {
+        let b = px[0];
+        let r = px[2];
+        px[0] = r;
+        px[2] = b;
+      }
+
+      let mut out_path = std::env::temp_dir();
+      let name = format!(
+        "erudaite-ocr-{}.png",
+        std::time::SystemTime::now()
+          .duration_since(std::time::UNIX_EPOCH)
+          .map(|d| d.as_millis())
+          .unwrap_or(0)
+      );
+      out_path.push(name);
+
+      let file = std::fs::File::create(&out_path).map_err(|e| format!("create png failed: {e}"))?;
+      let w = std::io::BufWriter::new(file);
+      let mut encoder = png::Encoder::new(w, rect.width, rect.height);
+      encoder.set_color(png::ColorType::Rgba);
+      encoder.set_depth(png::BitDepth::Eight);
+      let mut writer = encoder
+        .write_header()
+        .map_err(|e| format!("png header failed: {e}"))?;
+      writer
+        .write_image_data(&bgra)
+        .map_err(|e| format!("png write failed: {e}"))?;
+
+      return Ok(out_path.to_string_lossy().to_string());
+    }
+  }
+
+  #[cfg(not(windows))]
+  {
+    let _ = rect;
+    Err("capture_screen_region not supported on this platform".to_string())
+  }
+}
+
+#[tauri::command]
+pub async fn detect_tesseract_path() -> Result<Option<String>, String> {
+  #[cfg(windows)]
+  {
+    let candidates = [
+      r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+      r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    ];
+    for p in candidates {
+      if std::path::Path::new(p).exists() {
+        return Ok(Some(p.to_string()));
+      }
+    }
+
+    // Try PATH via `where`
+    if let Ok(out) = std::process::Command::new("where").arg("tesseract").output() {
+      if out.status.success() {
+        let s = String::from_utf8_lossy(&out.stdout);
+        if let Some(line) = s.lines().map(|l| l.trim()).find(|l| !l.is_empty()) {
+          if std::path::Path::new(line).exists() {
+            return Ok(Some(line.to_string()));
+          }
+        }
+      }
+    }
+    Ok(None)
+  }
+
+  #[cfg(not(windows))]
+  {
+    Ok(None)
+  }
+}
+
+#[tauri::command]
+pub async fn ocr_tesseract(image_path: String, lang: Option<String>, tesseract_path: Option<String>) -> Result<String, String> {
+  let lang = lang.unwrap_or_else(|| "jpn+eng".to_string());
+
+  let exe = if let Some(p) = tesseract_path.filter(|s| !s.trim().is_empty()) {
+    p
+  } else {
+    detect_tesseract_path().await?.ok_or_else(|| "TESSERACT_NOT_FOUND".to_string())?
+  };
+
+  let output = std::process::Command::new(exe)
+    .arg(image_path)
+    .arg("stdout")
+    .arg("-l")
+    .arg(lang)
+    .output()
+    .map_err(|e| format!("failed to run tesseract: {e}"))?;
+
+  if !output.status.success() {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    return Err(format!("tesseract failed: {}", stderr.trim()));
+  }
+  let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+  Ok(stdout.trim().to_string())
+}
+
+#[tauri::command]
+pub async fn download_tesseract_installer() -> Result<String, String> {
+  #[cfg(windows)]
+  {
+    // NOTE: Try multiple known URL patterns (the official distribution changes occasionally).
+    // We pin a known filename but keep fallbacks.
+    let urls = [
+      "https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-5.5.0.20241111.exe",
+      "https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-v5.5.0.20241111.exe",
+    ];
+
+    let mut last_err = None;
+    for url in urls {
+      let res = reqwest::get(url).await;
+      let res = match res {
+        Ok(r) => r,
+        Err(e) => {
+          last_err = Some(format!("download failed: {e}"));
+          continue;
+        }
+      };
+      if !res.status().is_success() {
+        last_err = Some(format!("download failed: http {}", res.status()));
+        continue;
+      }
+      let bytes = res.bytes().await.map_err(|e| format!("download read failed: {e}"))?;
+
+      let mut out_path = std::env::temp_dir();
+      out_path.push("erudaite-tesseract-installer.exe");
+      std::fs::write(&out_path, &bytes).map_err(|e| format!("write installer failed: {e}"))?;
+      return Ok(out_path.to_string_lossy().to_string());
+    }
+    Err(last_err.unwrap_or_else(|| "download failed".to_string()))
+  }
+
+  #[cfg(not(windows))]
+  {
+    Err("download_tesseract_installer not supported on this platform".to_string())
+  }
+}
+
+#[tauri::command]
+pub async fn launch_installer(path: String) -> Result<(), String> {
+  #[cfg(windows)]
+  {
+    std::process::Command::new(path)
+      .spawn()
+      .map_err(|e| format!("failed to launch installer: {e}"))?;
+    Ok(())
+  }
+
+  #[cfg(not(windows))]
+  {
+    let _ = path;
+    Err("launch_installer not supported on this platform".to_string())
+  }
 }
 
 

@@ -8,7 +8,12 @@ pub fn run() {
       commands::translate_sse,
       commands::capture_selected_text,
       commands::detect_language,
-      commands::get_cursor_position
+      commands::get_cursor_position,
+      commands::capture_screen_region,
+      commands::detect_tesseract_path,
+      commands::ocr_tesseract,
+      commands::download_tesseract_installer,
+      commands::launch_installer
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
