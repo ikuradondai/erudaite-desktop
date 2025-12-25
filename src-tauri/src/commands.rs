@@ -18,16 +18,20 @@ use core_graphics::event::CGEvent;
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 
 // #region agent log
-fn agent_log(hypothesis_id: &str, location: &str, message: &str, data: serde_json::Value) {
+fn agent_log(hypothesis_id: &str, message: &str, data: serde_json::Value) {
   use std::io::Write;
+  let ts = std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)
+    .map(|d| d.as_millis() as i64)
+    .unwrap_or(0);
   let payload = serde_json::json!({
     "sessionId": "debug-session",
     "runId": "run1",
     "hypothesisId": hypothesis_id,
-    "location": location,
+    "location": "src-tauri/src/commands.rs",
     "message": message,
     "data": data,
-    "timestamp": chrono::Utc::now().timestamp_millis()
+    "timestamp": ts
   });
   let path = r"c:\Users\kuran\OneDrive\Desktop\App_dev\.cursor\debug.log";
   if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
@@ -558,16 +562,11 @@ pub async fn detect_tesseract_path() -> Result<Option<String>, String> {
 pub async fn ocr_tesseract(image_path: String, lang: Option<String>, tesseract_path: Option<String>) -> Result<String, String> {
   let lang = lang.unwrap_or_else(|| "jpn+eng".to_string());
   // #region agent log
-  agent_log(
-    "G",
-    "src-tauri/src/commands.rs:ocr_tesseract",
-    "enter",
-    serde_json::json!({
-      "lang": lang,
-      "hasExplicitTesseractPath": tesseract_path.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false),
-      "imagePath": image_path
-    }),
-  );
+  agent_log("G", "ocr_tesseract enter", serde_json::json!({
+    "lang": lang,
+    "hasExplicitTesseractPath": tesseract_path.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false),
+    "imagePath": image_path
+  }));
   // #endregion agent log
 
   let exe = if let Some(p) = tesseract_path.filter(|s| !s.trim().is_empty()) {
@@ -587,23 +586,13 @@ pub async fn ocr_tesseract(image_path: String, lang: Option<String>, tesseract_p
   if !output.status.success() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     // #region agent log
-    agent_log(
-      "G",
-      "src-tauri/src/commands.rs:ocr_tesseract",
-      "exit error",
-      serde_json::json!({ "stderrLen": stderr.trim().len() }),
-    );
+    agent_log("G", "ocr_tesseract exit error", serde_json::json!({ "stderrLen": stderr.trim().len() }));
     // #endregion agent log
     return Err(format!("tesseract failed: {}", stderr.trim()));
   }
   let stdout = String::from_utf8_lossy(&output.stdout).to_string();
   // #region agent log
-  agent_log(
-    "G",
-    "src-tauri/src/commands.rs:ocr_tesseract",
-    "exit ok",
-    serde_json::json!({ "stdoutLen": stdout.trim().len() }),
-  );
+  agent_log("G", "ocr_tesseract exit ok", serde_json::json!({ "stdoutLen": stdout.trim().len() }));
   // #endregion agent log
   Ok(stdout.trim().to_string())
 }
