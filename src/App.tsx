@@ -9,6 +9,16 @@ import { PhysicalSize } from "@tauri-apps/api/dpi";
 import { monitorFromPoint } from "@tauri-apps/api/window";
 import "./App.css";
 
+// #region agent log
+function dbg(hypothesisId: string, location: string, message: string, data: Record<string, unknown> = {}) {
+  fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId: "debug-session", runId: "run1", hypothesisId, location, message, data, timestamp: Date.now() }),
+  }).catch(() => {});
+}
+// #endregion agent log
+
 type ClipboardMode = "displayOnly" | "displayAndCopy" | "copyOnly";
 
 type RoutingStrategy = "defaultBased" | "alwaysLastUsed" | "alwaysFixed";
@@ -251,6 +261,7 @@ function App() {
   const hotkeyInFlightRef = useRef(false);
   const ocrHotkeyInFlightRef = useRef(false);
   const lastHotkeyAtRef = useRef(0);
+  const lastOcrHotkeyAtRef = useRef(0);
   const translationRunIdRef = useRef(0);
   const popupRef = useRef<WebviewWindow | null>(null);
   const overlayRef = useRef<WebviewWindow | null>(null);
@@ -489,7 +500,7 @@ function App() {
     return popup;
   }, [emitPopupState, settings.popupFocusOnOpen]);
 
-  const closeOverlayIfOpen = useCallback(async () => {
+  const isOverlayOpen = useCallback(async () => {
     let w: WebviewWindow | null = overlayRef.current;
     if (!w) {
       try {
@@ -500,19 +511,20 @@ function App() {
     }
     if (!w) return false;
     try {
-      await w.destroy();
+      return await w.isVisible();
     } catch {
-      // ignore
+      return true;
     }
-    overlayRef.current = null;
-    return true;
   }, []);
 
   const openOcrOverlayOnCurrentMonitor = useCallback(async () => {
-    // Toggle behavior: if overlay is open, close it.
-    const closed = await closeOverlayIfOpen();
-    if (closed) return;
+    // If already open, do nothing (Esc closes).
+    if (await isOverlayOpen()) {
+      dbg("C", "src/App.tsx:openOcrOverlayOnCurrentMonitor", "overlay already open -> skip", {});
+      return;
+    }
 
+    dbg("C", "src/App.tsx:openOcrOverlayOnCurrentMonitor", "opening overlay", {});
     const cursor = (await invoke("get_cursor_position")) as { x: number; y: number };
     const m = await monitorFromPoint(cursor.x, cursor.y);
     if (!m) throw new Error("monitor not found");
@@ -526,6 +538,11 @@ function App() {
       ? `${window.location.origin}/#/ocr-overlay`
       : "index.html#/ocr-overlay";
 
+    dbg("C", "src/App.tsx:openOcrOverlayOnCurrentMonitor", "create WebviewWindow", {
+      cursor,
+      monitor: { position: m.position, size: m.size, scaleFactor: m.scaleFactor },
+      overlayUrl,
+    });
     const overlay = new WebviewWindow("ocr-overlay", {
       url: overlayUrl,
       x: ox,
@@ -542,12 +559,16 @@ function App() {
       shadow: false,
     });
     overlayRef.current = overlay;
+    overlay.once("tauri://created", () => {
+      dbg("C", "src/App.tsx:openOcrOverlayOnCurrentMonitor", "overlay created", { label: "ocr-overlay" });
+    });
     overlay.once("tauri://destroyed", () => {
       overlayRef.current = null;
     });
-  }, [closeOverlayIfOpen]);
+  }, [isOverlayOpen]);
 
   const handleHotkey = useCallback(async () => {
+    dbg("B", "src/App.tsx:handleHotkey", "popup hotkey pressed", { hotkey: settings.hotkey });
     const now = Date.now();
     lastHotkeyAtRef.current = now;
 
@@ -786,10 +807,18 @@ function App() {
   const handleOcrHotkey = useCallback(async () => {
     if (ocrHotkeyInFlightRef.current) return;
     ocrHotkeyInFlightRef.current = true;
+    dbg("B", "src/App.tsx:handleOcrHotkey", "ocr hotkey pressed", { ocrHotkey: settings.ocrHotkey });
     try {
+      const now = Date.now();
+      if (now - lastOcrHotkeyAtRef.current < 800) {
+        dbg("B", "src/App.tsx:handleOcrHotkey", "ocr hotkey debounced", { deltaMs: now - lastOcrHotkeyAtRef.current });
+        return;
+      }
+      lastOcrHotkeyAtRef.current = now;
       await openOcrOverlayOnCurrentMonitor();
       setStatus("OCR: select an area…");
     } catch (e) {
+      dbg("C", "src/App.tsx:handleOcrHotkey", "open overlay failed", { error: e instanceof Error ? e.message : String(e) });
       setStatus(`OCR hotkey error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       // release quickly; the actual OCR flow is triggered by overlay events
@@ -1069,19 +1098,25 @@ function App() {
       }
       if (disposed) return;
       try {
+        dbg("A", "src/App.tsx:registerHotkeys", "register attempt", { hotkey: settings.hotkey, ocrHotkey: settings.ocrHotkey });
         await register(settings.hotkey, () => {
+          dbg("B", "src/App.tsx:registerHotkeys", "popup hotkey callback invoked", { hotkey: settings.hotkey });
           // fire-and-forget; we keep UI responsive
           void handleHotkey();
         });
         await register(settings.ocrHotkey, () => {
+          dbg("B", "src/App.tsx:registerHotkeys", "ocr hotkey callback invoked", { ocrHotkey: settings.ocrHotkey });
           void handleOcrHotkey();
         });
+        dbg("A", "src/App.tsx:registerHotkeys", "register success", { hotkey: settings.hotkey, ocrHotkey: settings.ocrHotkey });
         setStatus(`Hotkeys registered: ${settings.hotkey} / ${settings.ocrHotkey}`);
       } catch (e) {
+        dbg("A", "src/App.tsx:registerHotkeys", "register failed", { error: e instanceof Error ? e.message : String(e), hotkey: settings.hotkey, ocrHotkey: settings.ocrHotkey });
         // fallback
         if (settings.hotkey !== FALLBACK_HOTKEY) {
           try {
             await register(FALLBACK_HOTKEY, () => void handleHotkey());
+            dbg("A", "src/App.tsx:registerHotkeys", "fallback registered", { fallback: FALLBACK_HOTKEY });
             setStatus(`Hotkey fallback registered: ${FALLBACK_HOTKEY}`);
             setSettings((s) => ({ ...s, hotkey: FALLBACK_HOTKEY }));
             return;
@@ -1092,6 +1127,7 @@ function App() {
         setStatus(`Failed to register hotkey: ${e instanceof Error ? e.message : String(e)}`);
       }
     })().catch((e) => {
+      dbg("A", "src/App.tsx:registerHotkeys", "register crashed", { error: e instanceof Error ? e.message : String(e) });
       setStatus(`Failed to register hotkey: ${e instanceof Error ? e.message : String(e)}`);
     });
     return () => {
