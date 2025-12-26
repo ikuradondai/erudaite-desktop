@@ -1041,10 +1041,18 @@ function App() {
             // #region agent log
             dbg("I", "src/App.tsx:ocrEnableListener", "downloaded installer", { installerPath });
             // #endregion agent log
-            await invoke("launch_installer", { path: installerPath });
-            // #region agent log
-            dbg("I", "src/App.tsx:ocrEnableListener", "launched installer", {});
-            // #endregion agent log
+            try {
+              await invoke("launch_installer", { path: installerPath });
+              // #region agent log
+              dbg("I", "src/App.tsx:ocrEnableListener", "launched installer", {});
+              // #endregion agent log
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              // #region agent log
+              dbg("I", "src/App.tsx:ocrEnableListener", "launch installer failed", { error: msg });
+              // #endregion agent log
+              throw e;
+            }
             emitPopupState({
               status: "Installer launched",
               translation:
@@ -1053,6 +1061,9 @@ function App() {
             });
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
+            // #region agent log
+            dbg("I", "src/App.tsx:ocrEnableListener", "enable flow failed", { error: msg });
+            // #endregion agent log
             emitPopupState({ status: "Install failed", translation: `インストールの準備に失敗しました。\n\n${msg}`, action: undefined });
           }
         }),

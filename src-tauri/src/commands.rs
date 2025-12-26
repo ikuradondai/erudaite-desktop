@@ -782,11 +782,22 @@ pub async fn launch_installer(path: String) -> Result<(), String> {
     // #region agent log
     agent_log("I", "launch_installer enter", serde_json::json!({ "path": path }));
     // #endregion agent log
-    std::process::Command::new(path)
-      .spawn()
-      .map_err(|e| format!("failed to launch installer: {e}"))?;
+    match std::process::Command::new(&path).spawn() {
+      Ok(_) => {
+        // #region agent log
+        agent_log("I", "launch_installer ok", serde_json::json!({}));
+        // #endregion agent log
+      }
+      Err(e) => {
+        let msg = format!("failed to launch installer: {e}");
+        // #region agent log
+        agent_log("I", "launch_installer error", serde_json::json!({ "error": msg }));
+        // #endregion agent log
+        return Err(msg);
+      }
+    }
     // #region agent log
-    agent_log("I", "launch_installer ok", serde_json::json!({}));
+    agent_log("I", "launch_installer exit", serde_json::json!({}));
     // #endregion agent log
     Ok(())
   }
