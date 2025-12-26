@@ -23,12 +23,48 @@ type RectPayload = {
 
 export default function OcrOverlay() {
   useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const root = document.getElementById("root");
+
+    const before = {
+      htmlBg: getComputedStyle(html).backgroundColor,
+      bodyBg: getComputedStyle(body).backgroundColor,
+      rootBg: root ? getComputedStyle(root).backgroundColor : null,
+      rootBgImage: root ? getComputedStyle(root).backgroundImage : null,
+    };
+    dbg("L", "src/OcrOverlay.tsx:mount", "bg before", before);
+
+    // Apply overlay-specific class to neutralize app-wide backgrounds (prevents white screen).
+    body.classList.add("overlay");
+    // Ensure html/body are transparent even if global CSS sets them.
+    const prev = {
+      htmlBg: html.style.background,
+      bodyBg: body.style.background,
+    };
+    html.style.background = "transparent";
+    body.style.background = "transparent";
+
+    const after = {
+      htmlBg: getComputedStyle(html).backgroundColor,
+      bodyBg: getComputedStyle(body).backgroundColor,
+      rootBg: root ? getComputedStyle(root).backgroundColor : null,
+      rootBgImage: root ? getComputedStyle(root).backgroundImage : null,
+    };
+    dbg("L", "src/OcrOverlay.tsx:mount", "bg after", after);
+
     dbg("J", "src/OcrOverlay.tsx:mount", "overlay mounted", {
       href: window.location.href,
       inner: { w: window.innerWidth, h: window.innerHeight },
       screen: { w: window.screen?.width, h: window.screen?.height },
       dpr: window.devicePixelRatio,
     });
+
+    return () => {
+      body.classList.remove("overlay");
+      html.style.background = prev.htmlBg;
+      body.style.background = prev.bodyBg;
+    };
   }, []);
 
   const [dragging, setDragging] = useState(false);

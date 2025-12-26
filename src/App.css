@@ -23,6 +23,17 @@ body.popup #root {
   min-height: unset;
 }
 
+/* OCR overlay mode: do NOT paint the main app gradient background */
+body.overlay #root {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
+  min-height: unset;
+}
+
 /* ====== Polished button styles ====== */
 .btn {
   display: inline-flex;

@@ -38,6 +38,20 @@ body.popup {
   min-height: 0;
 }
 
+/* OCR overlay mode: allow full-screen absolute/fixed UI and keep the webview transparent */
+body.overlay {
+  display: block;
+  place-items: initial;
+  min-width: 0;
+  min-height: 0;
+  background: transparent !important;
+}
+
+html,
+body.overlay {
+  background: transparent !important;
+}
+
 h1 {
   font-size: 3.2em;
   line-height: 1.1;
