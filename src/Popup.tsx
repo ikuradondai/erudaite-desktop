@@ -18,7 +18,7 @@ type PopupState = {
   status?: string;
   source?: string;
   translation?: string;
-  action?: "enable_ocr" | "recheck_ocr";
+  action?: "enable_ocr" | "recheck_ocr" | "install_jpn";
 };
 
 export default function Popup() {
@@ -274,7 +274,7 @@ export default function Popup() {
           </div>
         )}
 
-        {(state.action === "enable_ocr" || state.action === "recheck_ocr") && (
+        {(state.action === "enable_ocr" || state.action === "recheck_ocr" || state.action === "install_jpn") && (
           <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
             {state.action === "enable_ocr" && (
               <button
@@ -296,6 +296,28 @@ export default function Popup() {
                 }}
               >
                 OCRを有効化（推奨）
+              </button>
+            )}
+            {state.action === "install_jpn" && (
+              <button
+                type="button"
+                onClick={() => {
+                  // #region agent log
+                  dbg("I", "src/Popup.tsx:actions", "click install_jpn", {});
+                  // #endregion agent log
+                  void emit("erudaite://ocr/install-lang", { lang: "jpn" }).catch(() => {});
+                }}
+                style={{
+                  fontSize: 12,
+                  padding: "8px 10px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#2a6478",
+                  color: "white",
+                  cursor: "pointer",
+                }}
+              >
+                日本語OCRデータを追加
               </button>
             )}
             {state.action === "recheck_ocr" && (

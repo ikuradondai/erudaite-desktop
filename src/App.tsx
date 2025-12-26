@@ -38,6 +38,7 @@ type Settings = {
   // OCR (external Tesseract)
   ocrLang?: string; // default "jpn+eng"
   tesseractPath?: string; // optional absolute path to tesseract.exe
+  tessdataPrefix?: string; // optional TESSDATA_PREFIX (parent containing tessdata/)
 };
 
 // デフォルト言語として選択可能な6言語
@@ -948,6 +949,36 @@ function App() {
 
           let ocrText = "";
           try {
+            // If Japanese OCR is requested but `jpn` is not installed, prompt to install language data.
+            const wantsJpn = (settings.ocrLang ?? "jpn+eng").split("+").map((s) => s.trim()).includes("jpn");
+            if (wantsJpn) {
+              try {
+                const langs = (await invoke("tesseract_list_langs", {
+                  tesseractPath: settings.tesseractPath ?? null,
+                  tessdataPrefix: settings.tessdataPrefix ?? null,
+                })) as string[];
+                const hasJpn = Array.isArray(langs) && langs.includes("jpn");
+                // #region agent log
+                dbg("P", "src/App.tsx:ocrSelectedListener", "tesseract langs", { count: Array.isArray(langs) ? langs.length : -1, hasJpn });
+                // #endregion agent log
+                if (!hasJpn) {
+                  pendingOcrImagePathRef.current = imagePath;
+                  emitPopupState({
+                    status: "Japanese OCR data missing",
+                    source: "",
+                    translation:
+                      "日本語OCR（jpn）がインストールされていません。\n\n「日本語OCRデータを追加」を押して自動で導入してください。",
+                    action: "install_jpn",
+                  });
+                  return;
+                }
+              } catch (e) {
+                // ignore; we'll try OCR anyway
+                // #region agent log
+                dbg("P", "src/App.tsx:ocrSelectedListener", "tesseract_list_langs failed", { error: e instanceof Error ? e.message : String(e) });
+                // #endregion agent log
+              }
+            }
             // #region agent log
             dbg("G", "src/App.tsx:ocrSelectedListener", "invoke ocr_tesseract start", {
               imagePath,
@@ -960,6 +991,7 @@ function App() {
                 imagePath,
                 lang: settings.ocrLang ?? "jpn+eng",
                 tesseractPath: settings.tesseractPath ?? null,
+                tessdataPrefix: settings.tessdataPrefix ?? null,
               }),
             ).trim();
             // #region agent log
@@ -1207,6 +1239,36 @@ function App() {
             dbg("I", "src/App.tsx:ocrEnableListener", "enable flow failed", { error: msg });
             // #endregion agent log
             emitPopupState({ status: "Install failed", translation: `インストールの準備に失敗しました。\n\n${msg}`, action: undefined });
+          }
+        }),
+      );
+
+      // Download language traineddata to user-local tessdata and remember prefix.
+      unsubs.push(
+        await listen<{ lang?: string }>("erudaite://ocr/install-lang", async (e) => {
+          const lang = String(e.payload?.lang ?? "").trim() || "jpn";
+          // #region agent log
+          dbg("P", "src/App.tsx:ocrInstallLang", "install lang requested", { lang });
+          // #endregion agent log
+          try {
+            await ensurePopupAtCursor();
+            emitPopupState({ status: "Downloading…", translation: `OCR言語データ（${lang}）をダウンロードしています…`, action: undefined });
+            const prefix = String(await invoke("download_tessdata", { lang }));
+            // #region agent log
+            dbg("P", "src/App.tsx:ocrInstallLang", "downloaded tessdata", { lang, prefix });
+            // #endregion agent log
+            setSettings((s) => ({ ...s, tessdataPrefix: prefix }));
+            emitPopupState({
+              status: "Ready",
+              translation: `OCR言語データ（${lang}）を導入しました。\n\nもう一度OCRホットキーを押してください。`,
+              action: undefined,
+            });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            // #region agent log
+            dbg("P", "src/App.tsx:ocrInstallLang", "install failed", { lang, error: msg });
+            // #endregion agent log
+            emitPopupState({ status: "Install failed", translation: `言語データの導入に失敗しました。\n\n${msg}`, action: undefined });
           }
         }),
       );

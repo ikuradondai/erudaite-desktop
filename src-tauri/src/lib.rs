@@ -35,6 +35,8 @@ pub fn run() {
       commands::get_cursor_position,
       commands::capture_screen_region,
       commands::detect_tesseract_path,
+      commands::tesseract_list_langs,
+      commands::download_tessdata,
       commands::ocr_tesseract,
       commands::download_tesseract_installer,
       commands::launch_installer

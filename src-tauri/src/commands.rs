@@ -602,12 +602,18 @@ pub async fn detect_tesseract_path() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-pub async fn ocr_tesseract(image_path: String, lang: Option<String>, tesseract_path: Option<String>) -> Result<String, String> {
+pub async fn ocr_tesseract(
+  image_path: String,
+  lang: Option<String>,
+  tesseract_path: Option<String>,
+  tessdata_prefix: Option<String>,
+) -> Result<String, String> {
   let lang = lang.unwrap_or_else(|| "jpn+eng".to_string());
   // #region agent log
   agent_log("G", "ocr_tesseract enter", serde_json::json!({
     "lang": lang,
     "hasExplicitTesseractPath": tesseract_path.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false),
+    "hasTessdataPrefix": tessdata_prefix.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false),
     "imagePath": image_path
   }));
   // #endregion agent log
@@ -618,7 +624,11 @@ pub async fn ocr_tesseract(image_path: String, lang: Option<String>, tesseract_p
     detect_tesseract_path().await?.ok_or_else(|| "TESSERACT_NOT_FOUND".to_string())?
   };
 
-  let output = std::process::Command::new(exe)
+  let mut cmd = std::process::Command::new(exe);
+  if let Some(prefix) = tessdata_prefix.clone().filter(|s| !s.trim().is_empty()) {
+    cmd.env("TESSDATA_PREFIX", prefix);
+  }
+  let output = cmd
     .arg(image_path)
     .arg("stdout")
     .arg("-l")
@@ -631,13 +641,108 @@ pub async fn ocr_tesseract(image_path: String, lang: Option<String>, tesseract_p
     // #region agent log
     agent_log("G", "ocr_tesseract exit error", serde_json::json!({ "stderrLen": stderr.trim().len() }));
     // #endregion agent log
-    return Err(format!("tesseract failed: {}", stderr.trim()));
+    let msg = stderr.trim().to_string();
+    // If a language traineddata is missing, tesseract prints an "Error opening data file" message.
+    if msg.contains("Error opening data file") || msg.contains("Failed loading language") {
+      return Err(format!("TESSDATA_MISSING\n\n{}", msg));
+    }
+    return Err(format!("tesseract failed: {}", msg));
   }
   let stdout = String::from_utf8_lossy(&output.stdout).to_string();
   // #region agent log
   agent_log("G", "ocr_tesseract exit ok", serde_json::json!({ "stdoutLen": stdout.trim().len() }));
   // #endregion agent log
   Ok(stdout.trim().to_string())
+}
+
+#[tauri::command]
+pub async fn tesseract_list_langs(tesseract_path: Option<String>, tessdata_prefix: Option<String>) -> Result<Vec<String>, String> {
+  let exe = if let Some(p) = tesseract_path.filter(|s| !s.trim().is_empty()) {
+    p
+  } else {
+    detect_tesseract_path().await?.ok_or_else(|| "TESSERACT_NOT_FOUND".to_string())?
+  };
+
+  let mut cmd = std::process::Command::new(exe);
+  if let Some(prefix) = tessdata_prefix.filter(|s| !s.trim().is_empty()) {
+    cmd.env("TESSDATA_PREFIX", prefix);
+  }
+  let out = cmd.arg("--list-langs").output().map_err(|e| format!("failed to list langs: {e}"))?;
+  if !out.status.success() {
+    return Err(format!("list langs failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
+  }
+  let s = String::from_utf8_lossy(&out.stdout);
+  let mut langs: Vec<String> = Vec::new();
+  for line in s.lines() {
+    let t = line.trim();
+    if t.is_empty() {
+      continue;
+    }
+    if t.starts_with("List of available languages") {
+      continue;
+    }
+    langs.push(t.to_string());
+  }
+  // #region agent log
+  agent_log(
+    "P",
+    "tesseract_list_langs",
+    serde_json::json!({ "count": langs.len(), "hasJpn": langs.iter().any(|l| l == "jpn") }),
+  );
+  // #endregion agent log
+  Ok(langs)
+}
+
+#[tauri::command]
+pub async fn download_tessdata(lang: String) -> Result<String, String> {
+  #[cfg(windows)]
+  {
+    let lang = lang.trim().to_lowercase();
+    if lang.is_empty() {
+      return Err("invalid lang".to_string());
+    }
+    // Official tesseract-ocr tessdata_fast (smaller).
+    let url = format!(
+      "https://github.com/tesseract-ocr/tessdata_fast/raw/main/{}.traineddata",
+      lang
+    );
+    // #region agent log
+    agent_log("P", "download_tessdata enter", serde_json::json!({ "lang": lang, "url": url }));
+    // #endregion agent log
+
+    let client = reqwest::Client::builder()
+      .timeout(std::time::Duration::from_secs(60))
+      .build()
+      .map_err(|e| format!("client build failed: {e}"))?;
+    let res = client.get(&url).send().await.map_err(|e| format!("download failed: {e}"))?;
+    if !res.status().is_success() {
+      return Err(format!("download failed: http {}", res.status()));
+    }
+    let bytes = res.bytes().await.map_err(|e| format!("download read failed: {e}"))?;
+
+    let local = std::env::var("LOCALAPPDATA").map_err(|_| "LOCALAPPDATA not set".to_string())?;
+    let base = std::path::PathBuf::from(local).join("Erudaite").join("tessdata");
+    std::fs::create_dir_all(&base).map_err(|e| format!("create dir failed: {e}"))?;
+    let file_path = base.join(format!("{}.traineddata", lang));
+    std::fs::write(&file_path, &bytes).map_err(|e| format!("write traineddata failed: {e}"))?;
+
+    // TESSDATA_PREFIX should point to the parent directory that contains `tessdata/`.
+    let prefix = base
+      .parent()
+      .unwrap_or(&base)
+      .to_string_lossy()
+      .to_string();
+    // #region agent log
+    agent_log("P", "download_tessdata ok", serde_json::json!({ "prefix": prefix, "file": file_path.to_string_lossy() }));
+    // #endregion agent log
+    Ok(prefix)
+  }
+
+  #[cfg(not(windows))]
+  {
+    let _ = lang;
+    Err("download_tessdata not supported on this platform".to_string())
+  }
 }
 
 #[tauri::command]
