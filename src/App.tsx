@@ -1003,6 +1003,37 @@ function App() {
           // (Minimal duplication: we call the existing handler by temporarily setting clipboard/source state)
           // NOTE: We invoke translate_sse directly here using the same logic in handleHotkey.
           const picked = ocrText;
+          // #region agent log
+          {
+            // Count character classes without logging the actual text (avoid leaking content).
+            const total = picked.length;
+            let latin = 0;
+            let digit = 0;
+            let hira = 0;
+            let kata = 0;
+            let kanji = 0;
+            let other = 0;
+            for (const ch of picked) {
+              const code = ch.codePointAt(0) ?? 0;
+              if ((code >= 0x30 && code <= 0x39) || (code >= 0xff10 && code <= 0xff19)) digit++;
+              else if ((code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a)) latin++;
+              else if (code >= 0x3040 && code <= 0x309f) hira++;
+              else if ((code >= 0x30a0 && code <= 0x30ff) || (code >= 0xff66 && code <= 0xff9d)) kata++;
+              else if (code >= 0x4e00 && code <= 0x9fff) kanji++;
+              else other++;
+            }
+            dbg("P", "src/App.tsx:ocrSelectedListener", "ocr text class stats", {
+              ocrLang: settings.ocrLang ?? "jpn+eng",
+              total,
+              latin,
+              digit,
+              hira,
+              kata,
+              kanji,
+              other,
+            });
+          }
+          // #endregion agent log
           const computeTargetDefaultBased = (detectedLang: string) => {
             return isSameLanguage(detectedLang, settings.defaultLanguage) ? settings.secondaryLanguage : settings.defaultLanguage;
           };
@@ -1094,6 +1125,15 @@ function App() {
               const targetReal = computeTargetDefaultBased(detectedForUi);
               if (targetReal !== active.target) active = runTranslate(targetReal);
             }
+            // #region agent log
+            dbg("P", "src/App.tsx:ocrSelectedListener", "routing decision", {
+              routingStrategy: settings.routingStrategy,
+              detectedForUi,
+              heuristicDetected,
+              target0,
+              finalTarget: active.target,
+            });
+            // #endregion agent log
           }
 
           const full = await active.donePromise;
