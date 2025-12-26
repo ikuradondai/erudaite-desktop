@@ -131,6 +131,30 @@ export default function Popup() {
         transition: "opacity 0.15s ease, background 0.15s ease",
       }}
     >
+      {/* Drag handle (because decorations=false) */}
+      <div
+        onPointerDown={(e) => {
+          // Only left button drags
+          if (e.button !== 0) return;
+          // #region agent log
+          dbg("N", "src/Popup.tsx:drag", "startDragging", {});
+          // #endregion agent log
+          void getCurrentWindow().startDragging().catch(() => {});
+        }}
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          right: 0,
+          height: 28,
+          cursor: "move",
+          userSelect: "none",
+          WebkitUserSelect: "none",
+          background: "transparent",
+        }}
+        title="ドラッグして移動"
+      />
+
       {/* Close button */}
       <button
         onClick={() => closeSelf("button")}

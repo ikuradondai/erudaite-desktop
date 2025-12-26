@@ -5,7 +5,7 @@ import { load } from "@tauri-apps/plugin-store";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { emitTo } from "@tauri-apps/api/event";
-import { PhysicalSize } from "@tauri-apps/api/dpi";
+import { LogicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { monitorFromPoint } from "@tauri-apps/api/window";
 import "./App.css";
 
@@ -376,6 +376,60 @@ function App() {
         existing = null;
       }
     }
+
+    const cursorPhysical = (await invoke("get_cursor_position")) as { x: number; y: number };
+    const initialW = 360;
+    const initialH = 220;
+    const offsetY = 18;
+
+    // On Windows with DPI scaling, cursor coordinates tend to be physical pixels.
+    // Window positioning APIs behave like logical coordinates. Convert using monitor scaleFactor.
+    let sf = 1;
+    let cursor = { x: cursorPhysical.x, y: cursorPhysical.y };
+    let x = Math.floor(cursor.x - initialW / 2);
+    let y = Math.floor(cursor.y + offsetY);
+    // #region agent log
+    dbg("M", "src/App.tsx:ensurePopupAtCursor", "place popup (pre-clamp)", {
+      cursorPhysical,
+      cursorLogicalAssumed: cursor,
+      initial: { w: initialW, h: initialH, offsetY },
+      proposed: { x, y },
+    });
+    // #endregion agent log
+    try {
+      const m = await monitorFromPoint(cursorPhysical.x, cursorPhysical.y);
+      if (m) {
+        sf = m.scaleFactor || 1;
+        cursor = { x: cursorPhysical.x / sf, y: cursorPhysical.y / sf };
+        const mx = m.position.x / sf;
+        const my = m.position.y / sf;
+        const mw = m.size.width / sf;
+        const mh = m.size.height / sf;
+        // #region agent log
+        dbg("M", "src/App.tsx:ensurePopupAtCursor", "monitorFromPoint", {
+          monitor: { position: m.position, size: m.size, scaleFactor: m.scaleFactor },
+          cursorPhysical,
+          cursorLogical: cursor,
+          monitorLogical: { position: { x: mx, y: my }, size: { width: mw, height: mh } },
+        });
+        // #endregion agent log
+        x = Math.floor(cursor.x - initialW / 2);
+        y = Math.floor(cursor.y + offsetY);
+        x = Math.max(mx, Math.min(x, mx + mw - initialW));
+        // If not enough space below cursor, show above
+        if (y + initialH > my + mh) {
+          y = Math.max(my, Math.min(cursor.y - initialH - 12, my + mh - initialH));
+        } else {
+          y = Math.max(my, Math.min(y, my + mh - initialH));
+        }
+        // #region agent log
+        dbg("M", "src/App.tsx:ensurePopupAtCursor", "place popup (post-clamp)", { x, y });
+        // #endregion agent log
+      }
+    } catch {
+      // ignore clamp failures
+    }
+
     if (existing) {
       popupRef.current = existing;
       try {
@@ -397,6 +451,9 @@ function App() {
         try {
           // NOTE: show() may focus on some platforms; we log to verify.
           await existing.show();
+          try {
+            await existing.setPosition(new LogicalPosition(x, y));
+          } catch {}
           if (settings.popupFocusOnOpen) await existing.setFocus();
           // #region agent log
           try {
@@ -432,50 +489,6 @@ function App() {
         }
       }
       if (existing) return existing;
-    }
-
-    const cursor = (await invoke("get_cursor_position")) as { x: number; y: number };
-    const initialW = 360;
-    const initialH = 220;
-    const offsetY = 18;
-
-    // Clamp to current monitor bounds (best effort)
-    let x = Math.floor(cursor.x - initialW / 2);
-    let y = Math.floor(cursor.y + offsetY);
-    // #region agent log
-    dbg("M", "src/App.tsx:ensurePopupAtCursor", "place popup (pre-clamp)", {
-      cursor,
-      initial: { w: initialW, h: initialH, offsetY },
-      proposed: { x, y },
-    });
-    // #endregion agent log
-    try {
-      const m = await monitorFromPoint(cursor.x, cursor.y);
-      if (m) {
-        const mx = m.position.x;
-        const my = m.position.y;
-        const mw = m.size.width;
-        const mh = m.size.height;
-        // #region agent log
-        dbg("M", "src/App.tsx:ensurePopupAtCursor", "monitorFromPoint", {
-          monitor: { position: m.position, size: m.size, scaleFactor: m.scaleFactor },
-          cursor,
-          cursorLogicalGuess: m.scaleFactor ? { x: cursor.x / m.scaleFactor, y: cursor.y / m.scaleFactor } : null,
-        });
-        // #endregion agent log
-        x = Math.max(mx, Math.min(x, mx + mw - initialW));
-        // If not enough space below cursor, show above
-        if (y + initialH > my + mh) {
-          y = Math.max(my, Math.min(cursor.y - initialH - 12, my + mh - initialH));
-        } else {
-          y = Math.max(my, Math.min(y, my + mh - initialH));
-        }
-        // #region agent log
-        dbg("M", "src/App.tsx:ensurePopupAtCursor", "place popup (post-clamp)", { x, y });
-        // #endregion agent log
-      }
-    } catch {
-      // ignore clamp failures
     }
 
     // In dev, Vite serves on http://localhost:5173; in prod it's a file URL.
