@@ -26,8 +26,12 @@ export default function Popup() {
   const hasFocusedRef = useRef(false);
   const [isFocused, setIsFocused] = useState(true);
   const [showSource, setShowSource] = useState(false);
+  const dragInProgressRef = useRef(false);
 
   const closeSelf = (_reason: string) => {
+    // #region agent log
+    dbg("N", "src/Popup.tsx:closeSelf", "close requested", { reason: _reason, dragInProgress: dragInProgressRef.current });
+    // #endregion agent log
     const w = getCurrentWebviewWindow();
     // IMPORTANT: `close()` can resolve even if the window stays visible (close-request accepted but not applied).
     // To guarantee UX, hide first (disappear), then close/destroy for cleanup.
@@ -95,9 +99,22 @@ export default function Popup() {
       setIsFocused(payload === true);
       if (payload === true) {
         hasFocusedRef.current = true;
+        // Drag end heuristic: focus regained -> allow blur-to-close again
+        if (dragInProgressRef.current) {
+          // #region agent log
+          dbg("N", "src/Popup.tsx:focus", "focus regained; clear drag flag", {});
+          // #endregion agent log
+          dragInProgressRef.current = false;
+        }
         return;
       }
       if (payload === false && hasFocusedRef.current) {
+        if (dragInProgressRef.current) {
+          // #region agent log
+          dbg("N", "src/Popup.tsx:focus", "blur while dragging -> ignore", {});
+          // #endregion agent log
+          return;
+        }
         closeSelf("blur");
       }
     });
@@ -136,10 +153,23 @@ export default function Popup() {
         onPointerDown={(e) => {
           // Only left button drags
           if (e.button !== 0) return;
+          dragInProgressRef.current = true;
           // #region agent log
           dbg("N", "src/Popup.tsx:drag", "startDragging", {});
           // #endregion agent log
-          void getCurrentWindow().startDragging().catch(() => {});
+          void getCurrentWindow()
+            .startDragging()
+            .then(() => {
+              // #region agent log
+              dbg("N", "src/Popup.tsx:drag", "startDragging resolved", {});
+              // #endregion agent log
+            })
+            .catch((err) => {
+              // #region agent log
+              dbg("N", "src/Popup.tsx:drag", "startDragging failed", { error: err instanceof Error ? err.message : String(err) });
+              // #endregion agent log
+              dragInProgressRef.current = false;
+            });
         }}
         style={{
           position: "absolute",
