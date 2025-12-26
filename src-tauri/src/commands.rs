@@ -12,6 +12,10 @@ use windows_sys::Win32::Graphics::Gdi::{
   BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits, ReleaseDC,
   SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CAPTUREBLT, DIB_RGB_COLORS, HBITMAP, HDC, SRCCOPY,
 };
+#[cfg(windows)]
+use windows_sys::Win32::UI::Shell::ShellExecuteW;
+#[cfg(windows)]
+use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 #[cfg(target_os = "macos")]
 use core_graphics::event::CGEvent;
 #[cfg(target_os = "macos")]
@@ -782,20 +786,37 @@ pub async fn launch_installer(path: String) -> Result<(), String> {
     // #region agent log
     agent_log("I", "launch_installer enter", serde_json::json!({ "path": path }));
     // #endregion agent log
-    match std::process::Command::new(&path).spawn() {
-      Ok(_) => {
-        // #region agent log
-        agent_log("I", "launch_installer ok", serde_json::json!({}));
-        // #endregion agent log
-      }
-      Err(e) => {
-        let msg = format!("failed to launch installer: {e}");
-        // #region agent log
-        agent_log("I", "launch_installer error", serde_json::json!({ "error": msg }));
-        // #endregion agent log
-        return Err(msg);
-      }
+    fn to_wide(s: &str) -> Vec<u16> {
+      use std::os::windows::ffi::OsStrExt;
+      std::ffi::OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
     }
+
+    let verb = to_wide("runas"); // triggers UAC elevation prompt
+    let file = to_wide(&path);
+    let r = unsafe {
+      ShellExecuteW(
+        std::ptr::null_mut(),
+        verb.as_ptr(),
+        file.as_ptr(),
+        std::ptr::null(),
+        std::ptr::null(),
+        SW_SHOWNORMAL,
+      )
+    };
+    let code = r as isize;
+
+    // ShellExecuteW returns > 32 on success; <= 32 indicates error.
+    if code <= 32 {
+      let msg = format!("failed to launch installer (ShellExecuteW): code={code}");
+      // #region agent log
+      agent_log("I", "launch_installer error", serde_json::json!({ "error": msg, "code": code }));
+      // #endregion agent log
+      return Err(msg);
+    }
+
+    // #region agent log
+    agent_log("I", "launch_installer ok", serde_json::json!({ "code": code }));
+    // #endregion agent log
     // #region agent log
     agent_log("I", "launch_installer exit", serde_json::json!({}));
     // #endregion agent log
