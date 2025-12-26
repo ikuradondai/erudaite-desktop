@@ -625,7 +625,23 @@ pub async fn ocr_tesseract(
   };
 
   let mut cmd = std::process::Command::new(exe);
-  if let Some(prefix) = tessdata_prefix.clone().filter(|s| !s.trim().is_empty()) {
+  if let Some(prefix) = tessdata_prefix
+    .clone()
+    .filter(|s| !s.trim().is_empty())
+    .map(|p| {
+      // Accept either "...\<parent>" or "...\tessdata" as input; normalize to tessdata dir if present.
+      let pb = std::path::PathBuf::from(p.trim());
+      let tess = pb.join("tessdata");
+      if tess.is_dir() {
+        tess.to_string_lossy().to_string()
+      } else {
+        pb.to_string_lossy().to_string()
+      }
+    })
+  {
+    // #region agent log
+    agent_log("P", "ocr_tesseract using tessdata prefix", serde_json::json!({ "hasPrefix": true }));
+    // #endregion agent log
     cmd.env("TESSDATA_PREFIX", prefix);
   }
   let output = cmd
@@ -664,7 +680,21 @@ pub async fn tesseract_list_langs(tesseract_path: Option<String>, tessdata_prefi
   };
 
   let mut cmd = std::process::Command::new(exe);
-  if let Some(prefix) = tessdata_prefix.filter(|s| !s.trim().is_empty()) {
+  if let Some(prefix) = tessdata_prefix
+    .filter(|s| !s.trim().is_empty())
+    .map(|p| {
+      let pb = std::path::PathBuf::from(p.trim());
+      let tess = pb.join("tessdata");
+      if tess.is_dir() {
+        tess.to_string_lossy().to_string()
+      } else {
+        pb.to_string_lossy().to_string()
+      }
+    })
+  {
+    // #region agent log
+    agent_log("P", "tesseract_list_langs using tessdata prefix", serde_json::json!({ "hasPrefix": true }));
+    // #endregion agent log
     cmd.env("TESSDATA_PREFIX", prefix);
   }
   let out = cmd.arg("--list-langs").output().map_err(|e| format!("failed to list langs: {e}"))?;
@@ -726,12 +756,8 @@ pub async fn download_tessdata(lang: String) -> Result<String, String> {
     let file_path = base.join(format!("{}.traineddata", lang));
     std::fs::write(&file_path, &bytes).map_err(|e| format!("write traineddata failed: {e}"))?;
 
-    // TESSDATA_PREFIX should point to the parent directory that contains `tessdata/`.
-    let prefix = base
-      .parent()
-      .unwrap_or(&base)
-      .to_string_lossy()
-      .to_string();
+    // TESSDATA_PREFIX should point to the tessdata directory.
+    let prefix = base.to_string_lossy().to_string();
     // #region agent log
     agent_log("P", "download_tessdata ok", serde_json::json!({ "prefix": prefix, "file": file_path.to_string_lossy() }));
     // #endregion agent log
