@@ -309,6 +309,26 @@ function App() {
       if (merged.lastUsedTargetLang) {
         merged.lastUsedTargetLang = normalizeLangCode(merged.lastUsedTargetLang, merged.defaultLanguage);
       }
+
+      // #region agent log
+      dbg("A", "src/App.tsx:loadSettings", "loaded settings", {
+        hotkey: merged.hotkey,
+        ocrHotkey: merged.ocrHotkey,
+      });
+      // #endregion agent log
+
+      // If we previously persisted a fallback hotkey (Q), automatically revert to the default (Z).
+      // This avoids surprising users with an unintended key, now that hotkey re-register loops are fixed.
+      if (merged.hotkey === FALLBACK_HOTKEY) {
+        merged.hotkey = DEFAULT_SETTINGS.hotkey;
+        // #region agent log
+        dbg("A", "src/App.tsx:loadSettings", "revert fallback hotkey to default", {
+          from: FALLBACK_HOTKEY,
+          to: DEFAULT_SETTINGS.hotkey,
+        });
+        // #endregion agent log
+      }
+
       setSettings(merged);
       if (!merged.onboarded) setShowWizard(true);
     })().catch(() => {
@@ -1388,7 +1408,7 @@ function App() {
             await register(FALLBACK_HOTKEY, () => void handleHotkey());
             dbg("A", "src/App.tsx:registerHotkeys", "fallback registered", { fallback: FALLBACK_HOTKEY });
             setStatus(`Hotkey fallback registered: ${FALLBACK_HOTKEY}`);
-            setSettings((s) => ({ ...s, hotkey: FALLBACK_HOTKEY }));
+            // Do NOT persist fallback into settings; it should be an ephemeral safety net.
             return;
           } catch {
             // ignore
