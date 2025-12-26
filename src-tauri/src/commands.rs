@@ -630,6 +630,23 @@ pub async fn download_tesseract_installer() -> Result<String, String> {
     // #region agent log
     agent_log("I", "download_tesseract_installer enter", serde_json::json!({}));
     // #endregion agent log
+
+    fn extract_mannheim_w64_setup_links(html: &str) -> Vec<String> {
+      let mut out: Vec<String> = Vec::new();
+      let mut rest = html;
+      let needle = "href=\"";
+      while let Some(i) = rest.find(needle) {
+        rest = &rest[i + needle.len()..];
+        let Some(j) = rest.find('"') else { break };
+        let href = &rest[..j];
+        if href.starts_with("tesseract-ocr-w64-setup") && href.ends_with(".exe") {
+          out.push(href.to_string());
+        }
+        rest = &rest[j + 1..];
+      }
+      out
+    }
+
     // NOTE: Try multiple known URL patterns (the official distribution changes occasionally).
     // We pin a known filename but keep fallbacks.
     let urls = [
@@ -642,12 +659,59 @@ pub async fn download_tesseract_installer() -> Result<String, String> {
       .build()
       .map_err(|e| format!("client build failed: {e}"))?;
 
+    // First: discover latest installer from Mannheim directory listing (more robust than hardcoding).
+    let mut discovered_urls: Vec<String> = Vec::new();
+    let base = "https://digi.bib.uni-mannheim.de/tesseract/";
+    match client.get(base).send().await {
+      Ok(res) => {
+        let status = res.status();
+        if status.is_success() {
+          match res.text().await {
+            Ok(html) => {
+              let mut links = extract_mannheim_w64_setup_links(&html);
+              links.sort(); // pick the lexicographically latest
+              if let Some(last) = links.last().cloned() {
+                let u = format!("{}{}", base, last);
+                // #region agent log
+                agent_log("I", "download_tesseract_installer discovered", serde_json::json!({ "url": u, "count": links.len() }));
+                // #endregion agent log
+                discovered_urls.push(u);
+              } else {
+                // #region agent log
+                agent_log("I", "download_tesseract_installer discovery none", serde_json::json!({}));
+                // #endregion agent log
+              }
+            }
+            Err(e) => {
+              // #region agent log
+              agent_log("I", "download_tesseract_installer discovery read failed", serde_json::json!({ "error": format!("{e}") }));
+              // #endregion agent log
+            }
+          }
+        } else {
+          // #region agent log
+          agent_log("I", "download_tesseract_installer discovery http error", serde_json::json!({ "status": status.as_u16() }));
+          // #endregion agent log
+        }
+      }
+      Err(e) => {
+        // #region agent log
+        agent_log("I", "download_tesseract_installer discovery req error", serde_json::json!({ "error": format!("{e}") }));
+        // #endregion agent log
+      }
+    }
+
     let mut last_err = None;
-    for url in urls {
+    let all_urls: Vec<String> = discovered_urls
+      .into_iter()
+      .chain(urls.iter().map(|s| s.to_string()))
+      .collect();
+
+    for url in all_urls {
       // #region agent log
       agent_log("I", "download_tesseract_installer try", serde_json::json!({ "url": url }));
       // #endregion agent log
-      let res = client.get(url).send().await;
+      let res = client.get(&url).send().await;
       let res = match res {
         Ok(r) => r,
         Err(e) => {
