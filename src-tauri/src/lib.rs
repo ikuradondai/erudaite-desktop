@@ -1,5 +1,6 @@
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  use tauri::Manager;
   tauri::Builder::default()
     .plugin(tauri_plugin_clipboard_manager::init())
     .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -15,6 +16,21 @@ pub fn run() {
       commands::download_tesseract_installer,
       commands::launch_installer
     ])
+    .on_window_event(|window, event| {
+      // Safety: if the main window is closed/destroyed while OCR overlay is open,
+      // force-close other windows so the user never gets stuck with an overlay.
+      let label = window.label().to_string();
+      let should_cleanup = matches!(event, tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed);
+      if label == "main" && should_cleanup {
+        // Best-effort cleanup
+        if let Some(w) = window.app_handle().get_webview_window("ocr-overlay") {
+          let _ = w.close();
+        }
+        if let Some(w) = window.app_handle().get_webview_window("popup") {
+          let _ = w.close();
+        }
+      }
+    })
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

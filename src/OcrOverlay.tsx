@@ -77,6 +77,12 @@ export default function OcrOverlay() {
   }, [start, cur]);
 
   const startDrag = (e: React.PointerEvent) => {
+    // Right-click = immediate cancel (safety hatch)
+    if (e.button === 2) {
+      dbg("K", "src/OcrOverlay.tsx:startDrag", "right click cancel", {});
+      void getCurrentWindow().destroy();
+      return;
+    }
     e.preventDefault();
     (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
     setDragging(true);
@@ -128,6 +134,15 @@ export default function OcrOverlay() {
       onPointerDown={startDrag}
       onPointerMove={moveDrag}
       onPointerUp={endDrag}
+      onPointerCancel={() => {
+        dbg("K", "src/OcrOverlay.tsx", "pointer canceled -> destroy", {});
+        void getCurrentWindow().destroy();
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        dbg("K", "src/OcrOverlay.tsx", "context menu -> destroy", {});
+        void getCurrentWindow().destroy();
+      }}
       style={{
         position: "fixed",
         inset: 0,
@@ -166,8 +181,34 @@ export default function OcrOverlay() {
           fontSize: 13,
         }}
       >
-        ドラッグで範囲選択（Escでキャンセル）
+        ドラッグで範囲選択（Esc/右クリックでキャンセル）
       </div>
+
+      {/* Always-visible close button (safety hatch) */}
+      <button
+        type="button"
+        onClick={() => {
+          dbg("K", "src/OcrOverlay.tsx", "click close button -> destroy", {});
+          void getCurrentWindow().destroy();
+        }}
+        aria-label="Close"
+        title="Close (Esc / Right click)"
+        style={{
+          position: "absolute",
+          right: 16,
+          top: 16,
+          width: 34,
+          height: 34,
+          borderRadius: 10,
+          border: "none",
+          background: "rgba(0,0,0,0.55)",
+          color: "white",
+          fontSize: 18,
+          cursor: "pointer",
+        }}
+      >
+        ×
+      </button>
     </div>
   );
 }
