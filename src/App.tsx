@@ -366,114 +366,120 @@ function App() {
     return true;
   }, []);
 
-  const ensurePopupAtCursor = useCallback(async () => {
-    // If already open, just move + focus
-    let existing: WebviewWindow | null = popupRef.current;
-    if (!existing) {
-      try {
-        existing = await WebviewWindow.getByLabel("popup");
-      } catch (e) {
-        existing = null;
-      }
-    }
-
-    const cursorPhysical = (await invoke("get_cursor_position")) as { x: number; y: number };
-    const initialW = 360;
-    const initialH = 220;
-    const offsetY = 18;
-
-    // On Windows with DPI scaling, cursor coordinates tend to be physical pixels.
-    // Window positioning APIs behave like logical coordinates. Convert using monitor scaleFactor.
-    let sf = 1;
-    let cursor = { x: cursorPhysical.x, y: cursorPhysical.y };
-    let x = Math.floor(cursor.x - initialW / 2);
-    let y = Math.floor(cursor.y + offsetY);
-    // #region agent log
-    dbg("M", "src/App.tsx:ensurePopupAtCursor", "place popup (pre-clamp)", {
-      cursorPhysical,
-      cursorLogicalAssumed: cursor,
-      initial: { w: initialW, h: initialH, offsetY },
-      proposed: { x, y },
-    });
-    // #endregion agent log
-    try {
-      const m = await monitorFromPoint(cursorPhysical.x, cursorPhysical.y);
-      if (m) {
-        sf = m.scaleFactor || 1;
-        cursor = { x: cursorPhysical.x / sf, y: cursorPhysical.y / sf };
-        const mx = m.position.x / sf;
-        const my = m.position.y / sf;
-        const mw = m.size.width / sf;
-        const mh = m.size.height / sf;
-        // #region agent log
-        dbg("M", "src/App.tsx:ensurePopupAtCursor", "monitorFromPoint", {
-          monitor: { position: m.position, size: m.size, scaleFactor: m.scaleFactor },
-          cursorPhysical,
-          cursorLogical: cursor,
-          monitorLogical: { position: { x: mx, y: my }, size: { width: mw, height: mh } },
-        });
-        // #endregion agent log
-        x = Math.floor(cursor.x - initialW / 2);
-        y = Math.floor(cursor.y + offsetY);
-        x = Math.max(mx, Math.min(x, mx + mw - initialW));
-        // If not enough space below cursor, show above
-        if (y + initialH > my + mh) {
-          y = Math.max(my, Math.min(cursor.y - initialH - 12, my + mh - initialH));
-        } else {
-          y = Math.max(my, Math.min(y, my + mh - initialH));
-        }
-        // Ensure integer logical coords (avoid fractional positions under DPI).
-        x = Math.round(x);
-        y = Math.round(y);
-        // #region agent log
-        dbg("M", "src/App.tsx:ensurePopupAtCursor", "place popup (post-clamp)", { x, y });
-        // #endregion agent log
-      }
-    } catch {
-      // ignore clamp failures
-    }
-
-    // If monitor lookup failed, still ensure integer coords.
-    x = Math.round(x);
-    y = Math.round(y);
-
-    if (existing) {
-      popupRef.current = existing;
-      try {
-        const vis = await existing.isVisible();
-        if (!vis) {
-          // A hidden/stale window with the same label can stick around and refuse to show.
-          try {
-            await existing.destroy();
-          } catch (e) {
-            void e;
-          }
-          popupRef.current = null;
+  const ensurePopupAtPhysicalPoint = useCallback(
+    async (pointPhysical: { x: number; y: number }, reason: string) => {
+      // If already open, just move + focus
+      let existing: WebviewWindow | null = popupRef.current;
+      if (!existing) {
+        try {
+          existing = await WebviewWindow.getByLabel("popup");
+        } catch {
           existing = null;
         }
-      } catch (e) {
-        void e;
       }
+
+      const initialW = 360;
+      const initialH = 220;
+      const offsetY = 18;
+
+      // On Windows with DPI scaling, cursor/selection point tends to be physical pixels.
+      // Window positioning APIs behave like logical coordinates. Convert using monitor scaleFactor.
+      let sf = 1;
+      let pointLogical = { x: pointPhysical.x, y: pointPhysical.y };
+      let x = Math.floor(pointLogical.x - initialW / 2);
+      let y = Math.floor(pointLogical.y + offsetY);
+
+      // #region agent log
+      dbg("M", "src/App.tsx:ensurePopupAtPhysicalPoint", "place popup (pre-clamp)", {
+        reason,
+        pointPhysical,
+        pointLogicalAssumed: pointLogical,
+        initial: { w: initialW, h: initialH, offsetY },
+        proposed: { x, y },
+      });
+      // #endregion agent log
+
+      try {
+        const m = await monitorFromPoint(pointPhysical.x, pointPhysical.y);
+        if (m) {
+          sf = m.scaleFactor || 1;
+          pointLogical = { x: pointPhysical.x / sf, y: pointPhysical.y / sf };
+          const mx = m.position.x / sf;
+          const my = m.position.y / sf;
+          const mw = m.size.width / sf;
+          const mh = m.size.height / sf;
+          // #region agent log
+          dbg("M", "src/App.tsx:ensurePopupAtPhysicalPoint", "monitorFromPoint", {
+            reason,
+            monitor: { position: m.position, size: m.size, scaleFactor: m.scaleFactor },
+            pointPhysical,
+            pointLogical,
+            monitorLogical: { position: { x: mx, y: my }, size: { width: mw, height: mh } },
+          });
+          // #endregion agent log
+
+          x = Math.floor(pointLogical.x - initialW / 2);
+          y = Math.floor(pointLogical.y + offsetY);
+          x = Math.max(mx, Math.min(x, mx + mw - initialW));
+          // If not enough space below point, show above
+          if (y + initialH > my + mh) {
+            y = Math.max(my, Math.min(pointLogical.y - initialH - 12, my + mh - initialH));
+          } else {
+            y = Math.max(my, Math.min(y, my + mh - initialH));
+          }
+        }
+      } catch {
+        // ignore clamp failures
+      }
+
+      x = Math.round(x);
+      y = Math.round(y);
+      // #region agent log
+      dbg("M", "src/App.tsx:ensurePopupAtPhysicalPoint", "place popup (final)", { reason, x, y, sf });
+      // #endregion agent log
+
       if (existing) {
+        popupRef.current = existing;
         try {
-          // NOTE: show() may focus on some platforms; we log to verify.
-          await existing.show();
+          const vis = await existing.isVisible();
+          if (!vis) {
+            try {
+              await existing.destroy();
+            } catch {
+              // ignore
+            }
+            popupRef.current = null;
+            existing = null;
+          }
+        } catch {
+          // ignore
+        }
+        if (existing) {
           try {
-            await existing.setPosition(new LogicalPosition(x, y));
-          } catch {}
-          if (settings.popupFocusOnOpen) await existing.setFocus();
+            await existing.show();
+            await existing.setPosition(new LogicalPosition(x, y)).catch(() => {});
+            if (settings.popupFocusOnOpen) await existing.setFocus();
+          } catch {
+            // ignore; fall through to create new
+          }
           // #region agent log
           try {
             const p = await existing.outerPosition();
             const s = await existing.outerSize();
-            const sf = await existing.scaleFactor();
-            dbg("M", "src/App.tsx:ensurePopupAtCursor", "existing popup shown", { pos: p, size: s, scaleFactor: sf });
+            const sf2 = await existing.scaleFactor();
+            dbg("M", "src/App.tsx:ensurePopupAtPhysicalPoint", "existing popup shown", {
+              reason,
+              requested: { x, y },
+              actual: { pos: p, size: s, scaleFactor: sf2 },
+            });
           } catch (e) {
-            dbg("M", "src/App.tsx:ensurePopupAtCursor", "existing popup shown (pos/size read failed)", {
+            dbg("M", "src/App.tsx:ensurePopupAtPhysicalPoint", "existing popup shown (pos/size read failed)", {
+              reason,
               error: e instanceof Error ? e.message : String(e),
             });
           }
           // #endregion agent log
+
           try {
             const vis2 = await existing.isVisible();
             if (!vis2) {
@@ -484,19 +490,9 @@ function App() {
           } catch {
             // ignore
           }
-        } catch (e) {
-          void e;
-          try {
-            await existing.destroy();
-          } catch (e2) {
-            void e2;
-          }
-          popupRef.current = null;
-          existing = null;
         }
+        if (existing) return existing;
       }
-      if (existing) return existing;
-    }
 
     // In dev, Vite serves on http://localhost:5173; in prod it's a file URL.
     const popupUrl = window.location.protocol.startsWith("http")
@@ -540,9 +536,18 @@ function App() {
           const p = await popup.outerPosition();
           const s = await popup.outerSize();
           const sf = await popup.scaleFactor();
-          dbg("M", "src/App.tsx:ensurePopupAtCursor", "popup created (actual)", { pos: p, size: s, scaleFactor: sf, requested: { x, y, w: initialW, h: initialH } });
+          dbg("M", "src/App.tsx:ensurePopupAtPhysicalPoint", "popup created (actual)", {
+            reason,
+            pos: p,
+            size: s,
+            scaleFactor: sf,
+            requested: { x, y, w: initialW, h: initialH },
+          });
         } catch (e) {
-          dbg("M", "src/App.tsx:ensurePopupAtCursor", "popup created (pos/size read failed)", { error: e instanceof Error ? e.message : String(e) });
+          dbg("M", "src/App.tsx:ensurePopupAtPhysicalPoint", "popup created (pos/size read failed)", {
+            reason,
+            error: e instanceof Error ? e.message : String(e),
+          });
         }
         // #endregion agent log
       })();
@@ -557,7 +562,14 @@ function App() {
     emitPopupState({ status: "Translating…", source: "", translation: "" });
 
     return popup;
-  }, [emitPopupState, settings.popupFocusOnOpen]);
+    },
+    [emitPopupState, settings.popupFocusOnOpen],
+  );
+
+  const ensurePopupAtCursor = useCallback(async () => {
+    const cursorPhysical = (await invoke("get_cursor_position")) as { x: number; y: number };
+    return await ensurePopupAtPhysicalPoint(cursorPhysical, "cursor");
+  }, [ensurePopupAtPhysicalPoint]);
 
   const isOverlayOpen = useCallback(async () => {
     let w: WebviewWindow | null = overlayRef.current;
@@ -923,7 +935,8 @@ function App() {
         if (!width || !height) return;
         dbg("F", "src/App.tsx:ocrSelectedListener", "received rect", { x, y, width, height });
         try {
-          await ensurePopupAtCursor();
+          // Anchor popup near the selection (bottom-center) rather than current cursor.
+          await ensurePopupAtPhysicalPoint({ x: x + width / 2, y: y + height }, "ocr-rect");
           emitPopupState({ status: "OCR…", source: "", translation: "…" });
 
           const imagePath = String(
