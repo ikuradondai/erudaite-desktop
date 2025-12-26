@@ -264,6 +264,7 @@ function App() {
   const lastHotkeyAtRef = useRef(0);
   const lastOcrHotkeyAtRef = useRef(0);
   const translationRunIdRef = useRef(0);
+  const hotkeyEffectSeqRef = useRef(0);
   const popupRef = useRef<WebviewWindow | null>(null);
   const overlayRef = useRef<WebviewWindow | null>(null);
   const lastPopupStateRef = useRef<{ status?: string; source?: string; translation?: string; action?: string }>({
@@ -876,7 +877,8 @@ function App() {
       setSettings((s) => ({ ...s, lastUsedTargetLang: active.target }));
 
       if (settings.clipboardMode === "displayAndCopy" || settings.clipboardMode === "copyOnly") {
-        await writeText(full || translatedText || "");
+        const toCopy = (full ?? "").trim();
+        if (toCopy) await writeText(toCopy);
       }
 
       if (settings.clipboardMode === "copyOnly") {
@@ -890,7 +892,6 @@ function App() {
       emitPopupState({ status: `Error: ${e instanceof Error ? e.message : String(e)}` });
     } finally {
       hotkeyInFlightRef.current = false;
-      await sleep(50);
     }
   }, [
     closePopupIfOpen,
@@ -903,7 +904,6 @@ function App() {
     settings.hotkey,
     settings.lastUsedTargetLang,
     settings.routingStrategy,
-    translatedText,
   ]);
 
   const handleOcrHotkey = useCallback(async () => {
@@ -1352,6 +1352,14 @@ function App() {
 
   useEffect(() => {
     let disposed = false;
+    const seq = ++hotkeyEffectSeqRef.current;
+    // #region agent log
+    dbg("A", "src/App.tsx:registerHotkeys", "effect start", {
+      seq,
+      hotkey: settings.hotkey,
+      ocrHotkey: settings.ocrHotkey,
+    });
+    // #endregion agent log
     (async () => {
       try {
         await unregisterAll();
@@ -1394,6 +1402,9 @@ function App() {
     });
     return () => {
       disposed = true;
+      // #region agent log
+      dbg("A", "src/App.tsx:registerHotkeys", "effect cleanup", { seq });
+      // #endregion agent log
       void unregisterAll();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
