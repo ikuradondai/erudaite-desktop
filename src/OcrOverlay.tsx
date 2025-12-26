@@ -3,16 +3,6 @@ import { emit } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-// #region agent log
-function dbg(hypothesisId: string, location: string, message: string, data: Record<string, unknown> = {}) {
-  fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId: "debug-session", runId: "run1", hypothesisId, location, message, data, timestamp: Date.now() }),
-  }).catch(() => {});
-}
-// #endregion agent log
-
 type RectPayload = {
   // physical pixels in virtual-screen coordinates
   x: number;
@@ -27,14 +17,6 @@ export default function OcrOverlay() {
     const body = document.body;
     const root = document.getElementById("root");
 
-    const before = {
-      htmlBg: getComputedStyle(html).backgroundColor,
-      bodyBg: getComputedStyle(body).backgroundColor,
-      rootBg: root ? getComputedStyle(root).backgroundColor : null,
-      rootBgImage: root ? getComputedStyle(root).backgroundImage : null,
-    };
-    dbg("L", "src/OcrOverlay.tsx:mount", "bg before", before);
-
     // Apply overlay-specific class to neutralize app-wide backgrounds (prevents white screen).
     body.classList.add("overlay");
     // Ensure html/body are transparent even if global CSS sets them.
@@ -44,21 +26,6 @@ export default function OcrOverlay() {
     };
     html.style.background = "transparent";
     body.style.background = "transparent";
-
-    const after = {
-      htmlBg: getComputedStyle(html).backgroundColor,
-      bodyBg: getComputedStyle(body).backgroundColor,
-      rootBg: root ? getComputedStyle(root).backgroundColor : null,
-      rootBgImage: root ? getComputedStyle(root).backgroundImage : null,
-    };
-    dbg("L", "src/OcrOverlay.tsx:mount", "bg after", after);
-
-    dbg("J", "src/OcrOverlay.tsx:mount", "overlay mounted", {
-      href: window.location.href,
-      inner: { w: window.innerWidth, h: window.innerHeight },
-      screen: { w: window.screen?.width, h: window.screen?.height },
-      dpr: window.devicePixelRatio,
-    });
 
     return () => {
       body.classList.remove("overlay");
@@ -115,7 +82,6 @@ export default function OcrOverlay() {
   const startDrag = (e: React.PointerEvent) => {
     // Right-click = immediate cancel (safety hatch)
     if (e.button === 2) {
-      dbg("K", "src/OcrOverlay.tsx:startDrag", "right click cancel", {});
       void getCurrentWindow().destroy();
       return;
     }
@@ -134,13 +100,11 @@ export default function OcrOverlay() {
   const endDrag = async () => {
     setDragging(false);
     if (!rect) {
-      dbg("D", "src/OcrOverlay.tsx:endDrag", "no rect -> destroy", {});
       await getCurrentWindow().destroy();
       return;
     }
     const minSize = 6;
     if (rect.w < minSize || rect.h < minSize) {
-      dbg("D", "src/OcrOverlay.tsx:endDrag", "too small -> destroy", { rect });
       await getCurrentWindow().destroy();
       return;
     }
@@ -154,14 +118,8 @@ export default function OcrOverlay() {
       height: Math.floor(rect.h * scale),
     } satisfies RectPayload;
 
-    dbg("D", "src/OcrOverlay.tsx:endDrag", "emit rect", { rect, phys, scale, origin });
     await emit<RectPayload>("erudaite://ocr/selected", phys)
-      .then(() => {
-        dbg("E", "src/OcrOverlay.tsx:endDrag", "emit success", {});
-      })
-      .catch((e) => {
-        dbg("E", "src/OcrOverlay.tsx:endDrag", "emit failed", { error: e instanceof Error ? e.message : String(e) });
-      });
+      .catch(() => {});
     await getCurrentWindow().destroy().catch(() => {});
   };
 
@@ -171,12 +129,10 @@ export default function OcrOverlay() {
       onPointerMove={moveDrag}
       onPointerUp={endDrag}
       onPointerCancel={() => {
-        dbg("K", "src/OcrOverlay.tsx", "pointer canceled -> destroy", {});
         void getCurrentWindow().destroy();
       }}
       onContextMenu={(e) => {
         e.preventDefault();
-        dbg("K", "src/OcrOverlay.tsx", "context menu -> destroy", {});
         void getCurrentWindow().destroy();
       }}
       style={{
@@ -224,7 +180,6 @@ export default function OcrOverlay() {
       <button
         type="button"
         onClick={() => {
-          dbg("K", "src/OcrOverlay.tsx", "click close button -> destroy", {});
           void getCurrentWindow().destroy();
         }}
         aria-label="Close"

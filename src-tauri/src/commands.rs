@@ -21,29 +21,6 @@ use core_graphics::event::CGEvent;
 #[cfg(target_os = "macos")]
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 
-// #region agent log
-fn agent_log(hypothesis_id: &str, message: &str, data: serde_json::Value) {
-  use std::io::Write;
-  let ts = std::time::SystemTime::now()
-    .duration_since(std::time::UNIX_EPOCH)
-    .map(|d| d.as_millis() as i64)
-    .unwrap_or(0);
-  let payload = serde_json::json!({
-    "sessionId": "debug-session",
-    "runId": "run1",
-    "hypothesisId": hypothesis_id,
-    "location": "src-tauri/src/commands.rs",
-    "message": message,
-    "data": data,
-    "timestamp": ts
-  });
-  let path = r"c:\Users\kuran\OneDrive\Desktop\App_dev\.cursor\debug.log";
-  if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-    let _ = writeln!(f, "{}", payload.to_string());
-  }
-}
-// #endregion agent log
-
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "type")]
 pub enum StreamEvent {
@@ -119,7 +96,6 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
 
   let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("clipboard init failed: {e}"))?;
   let prev_text = clipboard.get_text().ok();
-  agent_log("H4", "capture_selected_text entry", serde_json::json!({}));
 
   // Give the user time to release the hotkey modifiers (e.g. Alt) so that Ctrl+C isn't affected.
   std::thread::sleep(std::time::Duration::from_millis(180));
@@ -134,20 +110,19 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
   );
   let _ = clipboard.set_text(sentinel.clone());
   // Wait until the sentinel is actually observable (Windows clipboard can lag).
-  let mut sentinel_observed = false;
+  let mut _sentinel_observed = false;
   {
     let started = std::time::Instant::now();
     while started.elapsed().as_millis() < 300 {
       if let Ok(cur) = clipboard.get_text() {
         if cur.trim() == sentinel {
-          sentinel_observed = true;
+          _sentinel_observed = true;
           break;
         }
       }
       std::thread::sleep(std::time::Duration::from_millis(20));
     }
   }
-  agent_log("H5", "sentinel set", serde_json::json!({ "observed": sentinel_observed }));
 
   // simulate copy
   #[cfg(target_os = "windows")]
@@ -165,7 +140,6 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
     let _ = enigo.key(Key::Control, Press);
     let _ = enigo.key(Key::Unicode('c'), Click);
     let _ = enigo.key(Key::Control, Release);
-    agent_log("H9", "copy attempt 1 sent (Ctrl+C)", serde_json::json!({}));
   }
   #[cfg(target_os = "macos")]
   {
@@ -185,13 +159,12 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
   {
     // no-op
   }
-  agent_log("H8", "after key simulation clipboard sample", serde_json::json!({}));
 
   // poll clipboard for updated selection
   let started = std::time::Instant::now();
   let mut picked: Option<String> = None;
   let mut polls: u32 = 0;
-  let mut last_kind: &'static str = "none";
+  let mut _last_kind: &'static str = "none";
   let mut tried_alt_copy: bool = false;
   while started.elapsed().as_millis() < timeout_ms as u128 {
     std::thread::sleep(std::time::Duration::from_millis(90));
@@ -199,7 +172,7 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
     if let Some(cur_s) = cur {
       polls += 1;
       let cur_t = cur_s.trim().to_string();
-      last_kind = if cur_t.is_empty() {
+      _last_kind = if cur_t.is_empty() {
         "empty"
       } else if cur_t == sentinel {
         "sentinel"
@@ -237,9 +210,7 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
               let _ = enigo.key(Key::Control, Press);
               let _ = enigo.key(Key::Unicode('c'), Click);
               let _ = enigo.key(Key::Control, Release);
-              agent_log("H9", "copy attempt 2/3 sent (Ctrl+Insert, Esc+Ctrl+C)", serde_json::json!({}));
             } else {
-              agent_log("H9", "alt copy attempts skipped (enigo init failed)", serde_json::json!({ "pollsAt": polls }));
             }
           }
         }
@@ -260,8 +231,6 @@ pub async fn capture_selected_text(timeout_ms: Option<u64>) -> Result<String, St
   if let Some(prev) = prev_text {
     let _ = clipboard.set_text(prev);
   }
-
-  agent_log("H6", "capture_selected_text exit", serde_json::json!({ "polls": polls, "lastKind": last_kind }));
 
   Ok(picked.unwrap_or_default())
 }
@@ -406,13 +375,6 @@ pub async fn capture_screen_region(rect: CaptureRect) -> Result<String, String> 
     if rect.width == 0 || rect.height == 0 {
       return Err("invalid rect".to_string());
     }
-    // #region agent log
-    agent_log(
-      "O",
-      "capture_screen_region enter",
-      serde_json::json!({ "x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height }),
-    );
-    // #endregion agent log
 
     unsafe {
       let screen_dc: HDC = GetDC(0 as HWND);
@@ -457,9 +419,6 @@ pub async fn capture_screen_region(rect: CaptureRect) -> Result<String, String> 
         let _ = ReleaseDC(0 as HWND, screen_dc);
         return Err("BitBlt failed".to_string());
       }
-      // #region agent log
-      agent_log("O", "capture_screen_region bitblt ok", serde_json::json!({}));
-      // #endregion agent log
 
       // Prepare 32-bit BGRA DIB
       let mut bmi: BITMAPINFO = std::mem::zeroed();
@@ -526,10 +485,6 @@ pub async fn capture_screen_region(rect: CaptureRect) -> Result<String, String> 
       writer
         .write_image_data(&bgra)
         .map_err(|e| format!("png write failed: {e}"))?;
-
-      // #region agent log
-      agent_log("O", "capture_screen_region wrote png", serde_json::json!({ "path": out_path.to_string_lossy() }));
-      // #endregion agent log
       return Ok(out_path.to_string_lossy().to_string());
     }
   }
@@ -545,10 +500,6 @@ pub async fn capture_screen_region(rect: CaptureRect) -> Result<String, String> 
 pub async fn detect_tesseract_path() -> Result<Option<String>, String> {
   #[cfg(windows)]
   {
-    // #region agent log
-    agent_log("G", "detect_tesseract_path enter", serde_json::json!({}));
-    // #endregion agent log
-
     let mut candidates: Vec<String> = vec![
       r"C:\Program Files\Tesseract-OCR\tesseract.exe",
       r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
@@ -568,9 +519,6 @@ pub async fn detect_tesseract_path() -> Result<Option<String>, String> {
 
     for p in &candidates {
       if std::path::Path::new(p).exists() {
-        // #region agent log
-        agent_log("G", "detect_tesseract_path found candidate", serde_json::json!({ "path": p }));
-        // #endregion agent log
         return Ok(Some(p.to_string()));
       }
     }
@@ -581,17 +529,11 @@ pub async fn detect_tesseract_path() -> Result<Option<String>, String> {
         let s = String::from_utf8_lossy(&out.stdout);
         if let Some(line) = s.lines().map(|l| l.trim()).find(|l| !l.is_empty()) {
           if std::path::Path::new(line).exists() {
-            // #region agent log
-            agent_log("G", "detect_tesseract_path found via where", serde_json::json!({ "path": line }));
-            // #endregion agent log
             return Ok(Some(line.to_string()));
           }
         }
       }
     }
-    // #region agent log
-    agent_log("G", "detect_tesseract_path none", serde_json::json!({ "candidateCount": candidates.len() }));
-    // #endregion agent log
     Ok(None)
   }
 
@@ -609,14 +551,6 @@ pub async fn ocr_tesseract(
   tessdata_prefix: Option<String>,
 ) -> Result<String, String> {
   let lang = lang.unwrap_or_else(|| "jpn+eng".to_string());
-  // #region agent log
-  agent_log("G", "ocr_tesseract enter", serde_json::json!({
-    "lang": lang,
-    "hasExplicitTesseractPath": tesseract_path.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false),
-    "hasTessdataPrefix": tessdata_prefix.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false),
-    "imagePath": image_path
-  }));
-  // #endregion agent log
 
   let exe = if let Some(p) = tesseract_path.filter(|s| !s.trim().is_empty()) {
     p
@@ -639,9 +573,6 @@ pub async fn ocr_tesseract(
       }
     })
   {
-    // #region agent log
-    agent_log("P", "ocr_tesseract using tessdata prefix", serde_json::json!({ "hasPrefix": true }));
-    // #endregion agent log
     cmd.env("TESSDATA_PREFIX", prefix);
   }
   let output = cmd
@@ -654,9 +585,6 @@ pub async fn ocr_tesseract(
 
   if !output.status.success() {
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // #region agent log
-    agent_log("G", "ocr_tesseract exit error", serde_json::json!({ "stderrLen": stderr.trim().len() }));
-    // #endregion agent log
     let msg = stderr.trim().to_string();
     // If a language traineddata is missing, tesseract prints an "Error opening data file" message.
     if msg.contains("Error opening data file") || msg.contains("Failed loading language") {
@@ -665,9 +593,6 @@ pub async fn ocr_tesseract(
     return Err(format!("tesseract failed: {}", msg));
   }
   let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-  // #region agent log
-  agent_log("G", "ocr_tesseract exit ok", serde_json::json!({ "stdoutLen": stdout.trim().len() }));
-  // #endregion agent log
   Ok(stdout.trim().to_string())
 }
 
@@ -692,9 +617,6 @@ pub async fn tesseract_list_langs(tesseract_path: Option<String>, tessdata_prefi
       }
     })
   {
-    // #region agent log
-    agent_log("P", "tesseract_list_langs using tessdata prefix", serde_json::json!({ "hasPrefix": true }));
-    // #endregion agent log
     cmd.env("TESSDATA_PREFIX", prefix);
   }
   let out = cmd.arg("--list-langs").output().map_err(|e| format!("failed to list langs: {e}"))?;
@@ -713,13 +635,6 @@ pub async fn tesseract_list_langs(tesseract_path: Option<String>, tessdata_prefi
     }
     langs.push(t.to_string());
   }
-  // #region agent log
-  agent_log(
-    "P",
-    "tesseract_list_langs",
-    serde_json::json!({ "count": langs.len(), "hasJpn": langs.iter().any(|l| l == "jpn") }),
-  );
-  // #endregion agent log
   Ok(langs)
 }
 
@@ -736,9 +651,6 @@ pub async fn download_tessdata(lang: String) -> Result<String, String> {
       "https://github.com/tesseract-ocr/tessdata_fast/raw/main/{}.traineddata",
       lang
     );
-    // #region agent log
-    agent_log("P", "download_tessdata enter", serde_json::json!({ "lang": lang, "url": url }));
-    // #endregion agent log
 
     let client = reqwest::Client::builder()
       .timeout(std::time::Duration::from_secs(60))
@@ -758,9 +670,6 @@ pub async fn download_tessdata(lang: String) -> Result<String, String> {
 
     // TESSDATA_PREFIX should point to the tessdata directory.
     let prefix = base.to_string_lossy().to_string();
-    // #region agent log
-    agent_log("P", "download_tessdata ok", serde_json::json!({ "prefix": prefix, "file": file_path.to_string_lossy() }));
-    // #endregion agent log
     Ok(prefix)
   }
 
@@ -775,10 +684,6 @@ pub async fn download_tessdata(lang: String) -> Result<String, String> {
 pub async fn download_tesseract_installer() -> Result<String, String> {
   #[cfg(windows)]
   {
-    // #region agent log
-    agent_log("I", "download_tesseract_installer enter", serde_json::json!({}));
-    // #endregion agent log
-
     fn extract_mannheim_w64_setup_links(html: &str) -> Vec<String> {
       let mut out: Vec<String> = Vec::new();
       let mut rest = html;
@@ -820,32 +725,21 @@ pub async fn download_tesseract_installer() -> Result<String, String> {
               links.sort(); // pick the lexicographically latest
               if let Some(last) = links.last().cloned() {
                 let u = format!("{}{}", base, last);
-                // #region agent log
-                agent_log("I", "download_tesseract_installer discovered", serde_json::json!({ "url": u, "count": links.len() }));
-                // #endregion agent log
                 discovered_urls.push(u);
               } else {
-                // #region agent log
-                agent_log("I", "download_tesseract_installer discovery none", serde_json::json!({}));
-                // #endregion agent log
+                // no-op
               }
             }
             Err(e) => {
-              // #region agent log
-              agent_log("I", "download_tesseract_installer discovery read failed", serde_json::json!({ "error": format!("{e}") }));
-              // #endregion agent log
+              let _ = e;
             }
           }
         } else {
-          // #region agent log
-          agent_log("I", "download_tesseract_installer discovery http error", serde_json::json!({ "status": status.as_u16() }));
-          // #endregion agent log
+          let _ = status;
         }
       }
       Err(e) => {
-        // #region agent log
-        agent_log("I", "download_tesseract_installer discovery req error", serde_json::json!({ "error": format!("{e}") }));
-        // #endregion agent log
+        let _ = e;
       }
     }
 
@@ -856,17 +750,11 @@ pub async fn download_tesseract_installer() -> Result<String, String> {
       .collect();
 
     for url in all_urls {
-      // #region agent log
-      agent_log("I", "download_tesseract_installer try", serde_json::json!({ "url": url }));
-      // #endregion agent log
       let res = client.get(&url).send().await;
       let res = match res {
         Ok(r) => r,
         Err(e) => {
           let msg = format!("download failed: {e}");
-          // #region agent log
-          agent_log("I", "download_tesseract_installer req error", serde_json::json!({ "url": url, "error": msg }));
-          // #endregion agent log
           last_err = Some(msg);
           continue;
         }
@@ -874,9 +762,6 @@ pub async fn download_tesseract_installer() -> Result<String, String> {
       let status = res.status();
       if !status.is_success() {
         let msg = format!("download failed: http {}", status);
-        // #region agent log
-        agent_log("I", "download_tesseract_installer http error", serde_json::json!({ "url": url, "status": status.as_u16() }));
-        // #endregion agent log
         last_err = Some(msg);
         continue;
       }
@@ -884,36 +769,21 @@ pub async fn download_tesseract_installer() -> Result<String, String> {
         Ok(b) => b,
         Err(e) => {
           let msg = format!("download read failed: {e}");
-          // #region agent log
-          agent_log("I", "download_tesseract_installer read error", serde_json::json!({ "url": url, "error": msg }));
-          // #endregion agent log
           last_err = Some(msg);
           continue;
         }
       };
-      // #region agent log
-      agent_log("I", "download_tesseract_installer downloaded", serde_json::json!({ "url": url, "bytes": bytes.len() }));
-      // #endregion agent log
 
       let mut out_path = std::env::temp_dir();
       out_path.push("erudaite-tesseract-installer.exe");
       if let Err(e) = std::fs::write(&out_path, &bytes) {
         let msg = format!("write installer failed: {e}");
-        // #region agent log
-        agent_log("I", "download_tesseract_installer write error", serde_json::json!({ "error": msg }));
-        // #endregion agent log
         last_err = Some(msg);
         continue;
       }
-      // #region agent log
-      agent_log("I", "download_tesseract_installer ok", serde_json::json!({ "path": out_path.to_string_lossy() }));
-      // #endregion agent log
       return Ok(out_path.to_string_lossy().to_string());
     }
     let final_err = last_err.unwrap_or_else(|| "download failed".to_string());
-    // #region agent log
-    agent_log("I", "download_tesseract_installer final fail", serde_json::json!({ "error": final_err }));
-    // #endregion agent log
     Err(final_err)
   }
 
@@ -927,9 +797,6 @@ pub async fn download_tesseract_installer() -> Result<String, String> {
 pub async fn launch_installer(path: String) -> Result<(), String> {
   #[cfg(windows)]
   {
-    // #region agent log
-    agent_log("I", "launch_installer enter", serde_json::json!({ "path": path }));
-    // #endregion agent log
     fn to_wide(s: &str) -> Vec<u16> {
       use std::os::windows::ffi::OsStrExt;
       std::ffi::OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
@@ -952,18 +819,9 @@ pub async fn launch_installer(path: String) -> Result<(), String> {
     // ShellExecuteW returns > 32 on success; <= 32 indicates error.
     if code <= 32 {
       let msg = format!("failed to launch installer (ShellExecuteW): code={code}");
-      // #region agent log
-      agent_log("I", "launch_installer error", serde_json::json!({ "error": msg, "code": code }));
-      // #endregion agent log
       return Err(msg);
     }
 
-    // #region agent log
-    agent_log("I", "launch_installer ok", serde_json::json!({ "code": code }));
-    // #endregion agent log
-    // #region agent log
-    agent_log("I", "launch_installer exit", serde_json::json!({}));
-    // #endregion agent log
     Ok(())
   }
 

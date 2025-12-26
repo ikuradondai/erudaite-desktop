@@ -4,16 +4,6 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css"; // For popup-animate animation
 
-// #region agent log
-function dbg(hypothesisId: string, location: string, message: string, data: Record<string, unknown> = {}) {
-  fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId: "debug-session", runId: "run1", hypothesisId, location, message, data, timestamp: Date.now() }),
-  }).catch(() => {});
-}
-// #endregion agent log
-
 type PopupState = {
   status?: string;
   source?: string;
@@ -29,9 +19,6 @@ export default function Popup() {
   const dragInProgressRef = useRef(false);
 
   const closeSelf = (_reason: string) => {
-    // #region agent log
-    dbg("N", "src/Popup.tsx:closeSelf", "close requested", { reason: _reason, dragInProgress: dragInProgressRef.current });
-    // #endregion agent log
     const w = getCurrentWebviewWindow();
     // IMPORTANT: `close()` can resolve even if the window stays visible (close-request accepted but not applied).
     // To guarantee UX, hide first (disappear), then close/destroy for cleanup.
@@ -101,18 +88,12 @@ export default function Popup() {
         hasFocusedRef.current = true;
         // Drag end heuristic: focus regained -> allow blur-to-close again
         if (dragInProgressRef.current) {
-          // #region agent log
-          dbg("N", "src/Popup.tsx:focus", "focus regained; clear drag flag", {});
-          // #endregion agent log
           dragInProgressRef.current = false;
         }
         return;
       }
       if (payload === false && hasFocusedRef.current) {
         if (dragInProgressRef.current) {
-          // #region agent log
-          dbg("N", "src/Popup.tsx:focus", "blur while dragging -> ignore", {});
-          // #endregion agent log
           return;
         }
         closeSelf("blur");
@@ -154,20 +135,10 @@ export default function Popup() {
           // Only left button drags
           if (e.button !== 0) return;
           dragInProgressRef.current = true;
-          // #region agent log
-          dbg("N", "src/Popup.tsx:drag", "startDragging", {});
-          // #endregion agent log
           void getCurrentWindow()
             .startDragging()
-            .then(() => {
-              // #region agent log
-              dbg("N", "src/Popup.tsx:drag", "startDragging resolved", {});
-              // #endregion agent log
-            })
             .catch((err) => {
-              // #region agent log
-              dbg("N", "src/Popup.tsx:drag", "startDragging failed", { error: err instanceof Error ? err.message : String(err) });
-              // #endregion agent log
+              void err;
               dragInProgressRef.current = false;
             });
         }}
@@ -280,9 +251,6 @@ export default function Popup() {
               <button
                 type="button"
                 onClick={() => {
-                  // #region agent log
-                  dbg("I", "src/Popup.tsx:actions", "click enable_ocr", {});
-                  // #endregion agent log
                   void emit("erudaite://ocr/enable", {}).catch(() => {});
                 }}
                 style={{
@@ -302,9 +270,6 @@ export default function Popup() {
               <button
                 type="button"
                 onClick={() => {
-                  // #region agent log
-                  dbg("I", "src/Popup.tsx:actions", "click install_jpn", {});
-                  // #endregion agent log
                   void emit("erudaite://ocr/install-lang", { lang: "jpn" }).catch(() => {});
                 }}
                 style={{
@@ -324,9 +289,6 @@ export default function Popup() {
               <button
                 type="button"
                 onClick={() => {
-                  // #region agent log
-                  dbg("I", "src/Popup.tsx:actions", "click recheck_ocr", {});
-                  // #endregion agent log
                   void emit("erudaite://ocr/recheck", {}).catch(() => {});
                 }}
                 style={{

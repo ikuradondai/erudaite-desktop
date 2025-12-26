@@ -1,29 +1,6 @@
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   use tauri::Manager;
-  // #region agent log
-  fn agent_log(hypothesis_id: &str, message: &str, data: serde_json::Value) {
-    use std::io::Write;
-    let ts = std::time::SystemTime::now()
-      .duration_since(std::time::UNIX_EPOCH)
-      .map(|d| d.as_millis() as i64)
-      .unwrap_or(0);
-    let payload = serde_json::json!({
-      "sessionId": "debug-session",
-      "runId": "run1",
-      "hypothesisId": hypothesis_id,
-      "location": "src-tauri/src/lib.rs",
-      "message": message,
-      "data": data,
-      "timestamp": ts
-    });
-    let path = r"c:\Users\kuran\OneDrive\Desktop\App_dev\.cursor\debug.log";
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-      let _ = writeln!(f, "{}", payload.to_string());
-    }
-  }
-  // #endregion agent log
-
   tauri::Builder::default()
     .plugin(tauri_plugin_clipboard_manager::init())
     .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -47,21 +24,12 @@ pub fn run() {
       let label = window.label().to_string();
       let should_cleanup = matches!(event, tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed);
       if label == "main" && should_cleanup {
-        // #region agent log
-        agent_log("K", "main close -> cleanup", serde_json::json!({ "event": format!("{:?}", event) }));
-        // #endregion agent log
         // Best-effort cleanup
         if let Some(w) = window.app_handle().get_webview_window("ocr-overlay") {
           let _ = w.close();
-          // #region agent log
-          agent_log("K", "closed ocr-overlay", serde_json::json!({}));
-          // #endregion agent log
         }
         if let Some(w) = window.app_handle().get_webview_window("popup") {
           let _ = w.close();
-          // #region agent log
-          agent_log("K", "closed popup", serde_json::json!({}));
-          // #endregion agent log
         }
       }
     })

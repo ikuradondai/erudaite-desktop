@@ -9,16 +9,6 @@ import { LogicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { monitorFromPoint } from "@tauri-apps/api/window";
 import "./App.css";
 
-// #region agent log
-function dbg(hypothesisId: string, location: string, message: string, data: Record<string, unknown> = {}) {
-  fetch("http://127.0.0.1:7242/ingest/71db1e77-df5f-480c-9275-0e41f17d2b1f", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId: "debug-session", runId: "run1", hypothesisId, location, message, data, timestamp: Date.now() }),
-  }).catch(() => {});
-}
-// #endregion agent log
-
 type ClipboardMode = "displayOnly" | "displayAndCopy" | "copyOnly";
 
 type RoutingStrategy = "defaultBased" | "alwaysLastUsed" | "alwaysFixed";
@@ -264,7 +254,6 @@ function App() {
   const lastHotkeyAtRef = useRef(0);
   const lastOcrHotkeyAtRef = useRef(0);
   const translationRunIdRef = useRef(0);
-  const hotkeyEffectSeqRef = useRef(0);
   const popupRef = useRef<WebviewWindow | null>(null);
   const overlayRef = useRef<WebviewWindow | null>(null);
   const lastPopupStateRef = useRef<{ status?: string; source?: string; translation?: string; action?: string }>({
@@ -310,23 +299,10 @@ function App() {
         merged.lastUsedTargetLang = normalizeLangCode(merged.lastUsedTargetLang, merged.defaultLanguage);
       }
 
-      // #region agent log
-      dbg("A", "src/App.tsx:loadSettings", "loaded settings", {
-        hotkey: merged.hotkey,
-        ocrHotkey: merged.ocrHotkey,
-      });
-      // #endregion agent log
-
       // If we previously persisted a fallback hotkey (Q), automatically revert to the default (Z).
       // This avoids surprising users with an unintended key, now that hotkey re-register loops are fixed.
       if (merged.hotkey === FALLBACK_HOTKEY) {
         merged.hotkey = DEFAULT_SETTINGS.hotkey;
-        // #region agent log
-        dbg("A", "src/App.tsx:loadSettings", "revert fallback hotkey to default", {
-          from: FALLBACK_HOTKEY,
-          to: DEFAULT_SETTINGS.hotkey,
-        });
-        // #endregion agent log
       }
 
       setSettings(merged);
@@ -411,16 +387,6 @@ function App() {
       let x = Math.floor(pointLogical.x - initialW / 2);
       let y = Math.floor(pointLogical.y + offsetY);
 
-      // #region agent log
-      dbg("M", "src/App.tsx:ensurePopupAtPhysicalPoint", "place popup (pre-clamp)", {
-        reason,
-        pointPhysical,
-        pointLogicalAssumed: pointLogical,
-        initial: { w: initialW, h: initialH, offsetY },
-        proposed: { x, y },
-      });
-      // #endregion agent log
-
       try {
         const m = await monitorFromPoint(pointPhysical.x, pointPhysical.y);
         if (m) {
@@ -430,15 +396,6 @@ function App() {
           const my = m.position.y / sf;
           const mw = m.size.width / sf;
           const mh = m.size.height / sf;
-          // #region agent log
-          dbg("M", "src/App.tsx:ensurePopupAtPhysicalPoint", "monitorFromPoint", {
-            reason,
-            monitor: { position: m.position, size: m.size, scaleFactor: m.scaleFactor },
-            pointPhysical,
-            pointLogical,
-            monitorLogical: { position: { x: mx, y: my }, size: { width: mw, height: mh } },
-          });
-          // #endregion agent log
 
           x = Math.floor(pointLogical.x - initialW / 2);
           y = Math.floor(pointLogical.y + offsetY);
@@ -456,9 +413,6 @@ function App() {
 
       x = Math.round(x);
       y = Math.round(y);
-      // #region agent log
-      dbg("M", "src/App.tsx:ensurePopupAtPhysicalPoint", "place popup (final)", { reason, x, y, sf });
-      // #endregion agent log
 
       if (existing) {
         popupRef.current = existing;
@@ -484,23 +438,6 @@ function App() {
           } catch {
             // ignore; fall through to create new
           }
-          // #region agent log
-          try {
-            const p = await existing.outerPosition();
-            const s = await existing.outerSize();
-            const sf2 = await existing.scaleFactor();
-            dbg("M", "src/App.tsx:ensurePopupAtPhysicalPoint", "existing popup shown", {
-              reason,
-              requested: { x, y },
-              actual: { pos: p, size: s, scaleFactor: sf2 },
-            });
-          } catch (e) {
-            dbg("M", "src/App.tsx:ensurePopupAtPhysicalPoint", "existing popup shown (pos/size read failed)", {
-              reason,
-              error: e instanceof Error ? e.message : String(e),
-            });
-          }
-          // #endregion agent log
 
           try {
             const vis2 = await existing.isVisible();
@@ -553,25 +490,6 @@ function App() {
             // ignore
           }
         }
-        // #region agent log
-        try {
-          const p = await popup.outerPosition();
-          const s = await popup.outerSize();
-          const sf = await popup.scaleFactor();
-          dbg("M", "src/App.tsx:ensurePopupAtPhysicalPoint", "popup created (actual)", {
-            reason,
-            pos: p,
-            size: s,
-            scaleFactor: sf,
-            requested: { x, y, w: initialW, h: initialH },
-          });
-        } catch (e) {
-          dbg("M", "src/App.tsx:ensurePopupAtPhysicalPoint", "popup created (pos/size read failed)", {
-            reason,
-            error: e instanceof Error ? e.message : String(e),
-          });
-        }
-        // #endregion agent log
       })();
       emitPopupState({}); // flush latest state after creation
     });
@@ -613,13 +531,11 @@ function App() {
   const openOcrOverlayOnCurrentMonitor = useCallback(async () => {
     // If already open, do nothing (Esc closes).
     if (await isOverlayOpen()) {
-      dbg("C", "src/App.tsx:openOcrOverlayOnCurrentMonitor", "overlay already open -> skip", {});
       return;
     }
 
     // We want the overlay to be usable across the entire virtual desktop (all monitors),
     // not just the current monitor.
-    dbg("J", "src/App.tsx:openOcrOverlayOnCurrentMonitor", "opening overlay", {});
     const cursor = (await invoke("get_cursor_position")) as { x: number; y: number };
 
     const windowApi = (await import("@tauri-apps/api/window")) as any;
@@ -660,12 +576,6 @@ function App() {
       ? `${window.location.origin}/#/ocr-overlay`
       : "index.html#/ocr-overlay";
 
-    dbg("C", "src/App.tsx:openOcrOverlayOnCurrentMonitor", "create WebviewWindow", {
-      cursor,
-      monitors,
-      virtual: { x: ox, y: oy, width: ow, height: oh },
-      overlayUrl,
-    });
     const overlay = new WebviewWindow("ocr-overlay", {
       url: overlayUrl,
       x: ox,
@@ -683,7 +593,7 @@ function App() {
     });
     overlayRef.current = overlay;
     overlay.once("tauri://created", () => {
-      dbg("C", "src/App.tsx:openOcrOverlayOnCurrentMonitor", "overlay created", { label: "ocr-overlay" });
+      void 0;
     });
     overlay.once("tauri://destroyed", () => {
       overlayRef.current = null;
@@ -691,7 +601,6 @@ function App() {
   }, [isOverlayOpen]);
 
   const handleHotkey = useCallback(async () => {
-    dbg("B", "src/App.tsx:handleHotkey", "popup hotkey pressed", { hotkey: settings.hotkey });
     const now = Date.now();
     lastHotkeyAtRef.current = now;
 
@@ -929,18 +838,15 @@ function App() {
   const handleOcrHotkey = useCallback(async () => {
     if (ocrHotkeyInFlightRef.current) return;
     ocrHotkeyInFlightRef.current = true;
-    dbg("B", "src/App.tsx:handleOcrHotkey", "ocr hotkey pressed", { ocrHotkey: settings.ocrHotkey });
     try {
       const now = Date.now();
       if (now - lastOcrHotkeyAtRef.current < 800) {
-        dbg("B", "src/App.tsx:handleOcrHotkey", "ocr hotkey debounced", { deltaMs: now - lastOcrHotkeyAtRef.current });
         return;
       }
       lastOcrHotkeyAtRef.current = now;
       await openOcrOverlayOnCurrentMonitor();
       setStatus("OCR: select an area…");
     } catch (e) {
-      dbg("C", "src/App.tsx:handleOcrHotkey", "open overlay failed", { error: e instanceof Error ? e.message : String(e) });
       setStatus(`OCR hotkey error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       // release quickly; the actual OCR flow is triggered by overlay events
@@ -954,7 +860,6 @@ function App() {
       return await listen<{ x: number; y: number; width: number; height: number }>("erudaite://ocr/selected", async (e) => {
         const { x, y, width, height } = e.payload ?? ({} as any);
         if (!width || !height) return;
-        dbg("F", "src/App.tsx:ocrSelectedListener", "received rect", { x, y, width, height });
         try {
           // Anchor popup near the selection (bottom-center) rather than current cursor.
           await ensurePopupAtPhysicalPoint({ x: x + width / 2, y: y + height }, "ocr-rect");
@@ -965,7 +870,6 @@ function App() {
               rect: { x: Math.floor(x), y: Math.floor(y), width: Math.floor(width), height: Math.floor(height) },
             }),
           );
-          dbg("F", "src/App.tsx:ocrSelectedListener", "captured image", { imagePath });
 
           let ocrText = "";
           try {
@@ -978,13 +882,6 @@ function App() {
                   tessdataPrefix: settings.tessdataPrefix ?? null,
                 })) as string[];
                 const hasJpn = Array.isArray(langs) && langs.includes("jpn");
-                // #region agent log
-                dbg("P", "src/App.tsx:ocrSelectedListener", "tesseract langs", {
-                  count: Array.isArray(langs) ? langs.length : -1,
-                  hasJpn,
-                  hasTessdataPrefix: Boolean((settings.tessdataPrefix ?? "").trim()),
-                });
-                // #endregion agent log
                 if (!hasJpn) {
                   pendingOcrImagePathRef.current = imagePath;
                   emitPopupState({
@@ -998,18 +895,8 @@ function App() {
                 }
               } catch (e) {
                 // ignore; we'll try OCR anyway
-                // #region agent log
-                dbg("P", "src/App.tsx:ocrSelectedListener", "tesseract_list_langs failed", { error: e instanceof Error ? e.message : String(e) });
-                // #endregion agent log
               }
             }
-            // #region agent log
-            dbg("G", "src/App.tsx:ocrSelectedListener", "invoke ocr_tesseract start", {
-              imagePath,
-              lang: settings.ocrLang ?? "jpn+eng",
-              hasExplicitTesseractPath: Boolean((settings.tesseractPath ?? "").trim()),
-            });
-            // #endregion agent log
             ocrText = String(
               await invoke("ocr_tesseract", {
                 imagePath,
@@ -1018,14 +905,8 @@ function App() {
                 tessdataPrefix: settings.tessdataPrefix ?? null,
               }),
             ).trim();
-            // #region agent log
-            dbg("G", "src/App.tsx:ocrSelectedListener", "invoke ocr_tesseract success", { ocrTextLen: ocrText.length });
-            // #endregion agent log
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            // #region agent log
-            dbg("G", "src/App.tsx:ocrSelectedListener", "invoke ocr_tesseract failed", { error: msg });
-            // #endregion agent log
             pendingOcrImagePathRef.current = imagePath;
             emitPopupState({
               status: "OCR failed",
@@ -1040,9 +921,6 @@ function App() {
           }
 
           if (!ocrText) {
-            // #region agent log
-            dbg("G", "src/App.tsx:ocrSelectedListener", "ocr empty result", {});
-            // #endregion agent log
             emitPopupState({
               status: "No text detected",
               source: "",
@@ -1059,37 +937,6 @@ function App() {
           // (Minimal duplication: we call the existing handler by temporarily setting clipboard/source state)
           // NOTE: We invoke translate_sse directly here using the same logic in handleHotkey.
           const picked = ocrText;
-          // #region agent log
-          {
-            // Count character classes without logging the actual text (avoid leaking content).
-            const total = picked.length;
-            let latin = 0;
-            let digit = 0;
-            let hira = 0;
-            let kata = 0;
-            let kanji = 0;
-            let other = 0;
-            for (const ch of picked) {
-              const code = ch.codePointAt(0) ?? 0;
-              if ((code >= 0x30 && code <= 0x39) || (code >= 0xff10 && code <= 0xff19)) digit++;
-              else if ((code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a)) latin++;
-              else if (code >= 0x3040 && code <= 0x309f) hira++;
-              else if ((code >= 0x30a0 && code <= 0x30ff) || (code >= 0xff66 && code <= 0xff9d)) kata++;
-              else if (code >= 0x4e00 && code <= 0x9fff) kanji++;
-              else other++;
-            }
-            dbg("P", "src/App.tsx:ocrSelectedListener", "ocr text class stats", {
-              ocrLang: settings.ocrLang ?? "jpn+eng",
-              total,
-              latin,
-              digit,
-              hira,
-              kata,
-              kanji,
-              other,
-            });
-          }
-          // #endregion agent log
           const computeTargetDefaultBased = (detectedLang: string) => {
             return isSameLanguage(detectedLang, settings.defaultLanguage) ? settings.secondaryLanguage : settings.defaultLanguage;
           };
@@ -1099,9 +946,6 @@ function App() {
             setTargetLang(target);
             setTranslatedText("");
             emitPopupState({ status: "Translating…", source: picked, translation: "…" });
-            // #region agent log
-            dbg("H", "src/App.tsx:ocrSelectedListener", "translate start", { runId, target, sourceLen: picked.length });
-            // #endregion agent log
             const ch = new Channel<
               { type: "delta"; content: string } | { type: "done" } | { type: "error"; message: string }
             >();
@@ -1112,9 +956,6 @@ function App() {
                 setTranslatedText(full);
                 emitPopupState({ status: "Translating…", translation: full });
               } else if (msg.type === "error") {
-                // #region agent log
-                dbg("H", "src/App.tsx:ocrSelectedListener", "translate error event", { runId, target, message: msg.message });
-                // #endregion agent log
                 setStatus(`Error: ${msg.message}`);
                 emitPopupState({ status: `Error: ${msg.message}` });
               }
@@ -1129,9 +970,6 @@ function App() {
                 isReverse: false,
                 onEvent: ch,
               });
-              // #region agent log
-              dbg("H", "src/App.tsx:ocrSelectedListener", "translate invoke completed", { runId, target, fullLen: full.length });
-              // #endregion agent log
               return full;
             })();
             return { runId, target, donePromise };
@@ -1181,15 +1019,6 @@ function App() {
               const targetReal = computeTargetDefaultBased(detectedForUi);
               if (targetReal !== active.target) active = runTranslate(targetReal);
             }
-            // #region agent log
-            dbg("P", "src/App.tsx:ocrSelectedListener", "routing decision", {
-              routingStrategy: settings.routingStrategy,
-              detectedForUi,
-              heuristicDetected,
-              target0,
-              finalTarget: active.target,
-            });
-            // #endregion agent log
           }
 
           const full = await active.donePromise;
@@ -1230,26 +1059,14 @@ function App() {
       // Download + launch installer
       unsubs.push(
         await listen("erudaite://ocr/enable", async () => {
-          // #region agent log
-          dbg("I", "src/App.tsx:ocrEnableListener", "received enable event", {});
-          // #endregion agent log
           try {
             await ensurePopupAtCursor();
             emitPopupState({ status: "Downloading…", translation: "Tesseract インストーラをダウンロードしています…", action: undefined });
             const installerPath = String(await invoke("download_tesseract_installer"));
-            // #region agent log
-            dbg("I", "src/App.tsx:ocrEnableListener", "downloaded installer", { installerPath });
-            // #endregion agent log
             try {
               await invoke("launch_installer", { path: installerPath });
-              // #region agent log
-              dbg("I", "src/App.tsx:ocrEnableListener", "launched installer", {});
-              // #endregion agent log
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
-              // #region agent log
-              dbg("I", "src/App.tsx:ocrEnableListener", "launch installer failed", { error: msg });
-              // #endregion agent log
               throw e;
             }
             emitPopupState({
@@ -1260,9 +1077,6 @@ function App() {
             });
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            // #region agent log
-            dbg("I", "src/App.tsx:ocrEnableListener", "enable flow failed", { error: msg });
-            // #endregion agent log
             emitPopupState({ status: "Install failed", translation: `インストールの準備に失敗しました。\n\n${msg}`, action: undefined });
           }
         }),
@@ -1272,16 +1086,10 @@ function App() {
       unsubs.push(
         await listen<{ lang?: string }>("erudaite://ocr/install-lang", async (e) => {
           const lang = String(e.payload?.lang ?? "").trim() || "jpn";
-          // #region agent log
-          dbg("P", "src/App.tsx:ocrInstallLang", "install lang requested", { lang });
-          // #endregion agent log
           try {
             await ensurePopupAtCursor();
             emitPopupState({ status: "Downloading…", translation: `OCR言語データ（${lang}）をダウンロードしています…`, action: undefined });
             const prefix = String(await invoke("download_tessdata", { lang }));
-            // #region agent log
-            dbg("P", "src/App.tsx:ocrInstallLang", "downloaded tessdata", { lang, prefix });
-            // #endregion agent log
             setSettings((s) => ({ ...s, tessdataPrefix: prefix }));
             emitPopupState({
               status: "Ready",
@@ -1290,9 +1098,6 @@ function App() {
             });
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            // #region agent log
-            dbg("P", "src/App.tsx:ocrInstallLang", "install failed", { lang, error: msg });
-            // #endregion agent log
             emitPopupState({ status: "Install failed", translation: `言語データの導入に失敗しました。\n\n${msg}`, action: undefined });
           }
         }),
@@ -1301,14 +1106,8 @@ function App() {
       // Re-detect and (best-effort) resume pending OCR
       unsubs.push(
         await listen("erudaite://ocr/recheck", async () => {
-          // #region agent log
-          dbg("I", "src/App.tsx:ocrRecheckListener", "received recheck event", {});
-          // #endregion agent log
           try {
             const detected = (await invoke("detect_tesseract_path")) as string | null;
-            // #region agent log
-            dbg("I", "src/App.tsx:ocrRecheckListener", "detect result", { detected });
-            // #endregion agent log
             if (!detected) {
               emitPopupState({
                 status: "Not found",
@@ -1372,14 +1171,6 @@ function App() {
 
   useEffect(() => {
     let disposed = false;
-    const seq = ++hotkeyEffectSeqRef.current;
-    // #region agent log
-    dbg("A", "src/App.tsx:registerHotkeys", "effect start", {
-      seq,
-      hotkey: settings.hotkey,
-      ocrHotkey: settings.ocrHotkey,
-    });
-    // #endregion agent log
     (async () => {
       try {
         await unregisterAll();
@@ -1388,25 +1179,19 @@ function App() {
       }
       if (disposed) return;
       try {
-        dbg("A", "src/App.tsx:registerHotkeys", "register attempt", { hotkey: settings.hotkey, ocrHotkey: settings.ocrHotkey });
         await register(settings.hotkey, () => {
-          dbg("B", "src/App.tsx:registerHotkeys", "popup hotkey callback invoked", { hotkey: settings.hotkey });
           // fire-and-forget; we keep UI responsive
           void handleHotkey();
         });
         await register(settings.ocrHotkey, () => {
-          dbg("B", "src/App.tsx:registerHotkeys", "ocr hotkey callback invoked", { ocrHotkey: settings.ocrHotkey });
           void handleOcrHotkey();
         });
-        dbg("A", "src/App.tsx:registerHotkeys", "register success", { hotkey: settings.hotkey, ocrHotkey: settings.ocrHotkey });
         setStatus(`Hotkeys registered: ${settings.hotkey} / ${settings.ocrHotkey}`);
       } catch (e) {
-        dbg("A", "src/App.tsx:registerHotkeys", "register failed", { error: e instanceof Error ? e.message : String(e), hotkey: settings.hotkey, ocrHotkey: settings.ocrHotkey });
         // fallback
         if (settings.hotkey !== FALLBACK_HOTKEY) {
           try {
             await register(FALLBACK_HOTKEY, () => void handleHotkey());
-            dbg("A", "src/App.tsx:registerHotkeys", "fallback registered", { fallback: FALLBACK_HOTKEY });
             setStatus(`Hotkey fallback registered: ${FALLBACK_HOTKEY}`);
             // Do NOT persist fallback into settings; it should be an ephemeral safety net.
             return;
@@ -1417,14 +1202,10 @@ function App() {
         setStatus(`Failed to register hotkey: ${e instanceof Error ? e.message : String(e)}`);
       }
     })().catch((e) => {
-      dbg("A", "src/App.tsx:registerHotkeys", "register crashed", { error: e instanceof Error ? e.message : String(e) });
       setStatus(`Failed to register hotkey: ${e instanceof Error ? e.message : String(e)}`);
     });
     return () => {
       disposed = true;
-      // #region agent log
-      dbg("A", "src/App.tsx:registerHotkeys", "effect cleanup", { seq });
-      // #endregion agent log
       void unregisterAll();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
