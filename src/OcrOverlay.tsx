@@ -23,7 +23,12 @@ type RectPayload = {
 
 export default function OcrOverlay() {
   useEffect(() => {
-    dbg("D", "src/OcrOverlay.tsx:mount", "overlay mounted", { href: window.location.href });
+    dbg("J", "src/OcrOverlay.tsx:mount", "overlay mounted", {
+      href: window.location.href,
+      inner: { w: window.innerWidth, h: window.innerHeight },
+      screen: { w: window.screen?.width, h: window.screen?.height },
+      dpr: window.devicePixelRatio,
+    });
   }, []);
 
   const [dragging, setDragging] = useState(false);
@@ -126,7 +131,8 @@ export default function OcrOverlay() {
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.35)",
+        // Transparent overlay (still captures pointer events)
+        background: "rgba(0,0,0,0)",
         cursor: "crosshair",
         userSelect: "none",
       }}

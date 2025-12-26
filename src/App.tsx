@@ -524,15 +524,44 @@ function App() {
       return;
     }
 
-    dbg("C", "src/App.tsx:openOcrOverlayOnCurrentMonitor", "opening overlay", {});
+    // We want the overlay to be usable across the entire virtual desktop (all monitors),
+    // not just the current monitor.
+    dbg("J", "src/App.tsx:openOcrOverlayOnCurrentMonitor", "opening overlay", {});
     const cursor = (await invoke("get_cursor_position")) as { x: number; y: number };
-    const m = await monitorFromPoint(cursor.x, cursor.y);
-    if (!m) throw new Error("monitor not found");
 
-    const ox = m.position.x;
-    const oy = m.position.y;
-    const ow = m.size.width;
-    const oh = m.size.height;
+    const windowApi = (await import("@tauri-apps/api/window")) as any;
+    const availableMonitorsFn = windowApi?.availableMonitors as undefined | (() => Promise<any[]>);
+    let monitors: Array<{ position: { x: number; y: number }; size: { width: number; height: number }; scaleFactor?: number }> = [];
+    try {
+      if (availableMonitorsFn) {
+        monitors = (await availableMonitorsFn()) || [];
+      }
+    } catch {
+      monitors = [];
+    }
+
+    // Fallback: current monitor only
+    if (!monitors.length) {
+      const m = await monitorFromPoint(cursor.x, cursor.y);
+      if (m) monitors = [m as any];
+    }
+    if (!monitors.length) throw new Error("monitor not found");
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const m of monitors) {
+      minX = Math.min(minX, m.position.x);
+      minY = Math.min(minY, m.position.y);
+      maxX = Math.max(maxX, m.position.x + m.size.width);
+      maxY = Math.max(maxY, m.position.y + m.size.height);
+    }
+
+    const ox = Math.floor(minX);
+    const oy = Math.floor(minY);
+    const ow = Math.floor(maxX - minX);
+    const oh = Math.floor(maxY - minY);
 
     const overlayUrl = window.location.protocol.startsWith("http")
       ? `${window.location.origin}/#/ocr-overlay`
@@ -540,7 +569,8 @@ function App() {
 
     dbg("C", "src/App.tsx:openOcrOverlayOnCurrentMonitor", "create WebviewWindow", {
       cursor,
-      monitor: { position: m.position, size: m.size, scaleFactor: m.scaleFactor },
+      monitors,
+      virtual: { x: ox, y: oy, width: ow, height: oh },
       overlayUrl,
     });
     const overlay = new WebviewWindow("ocr-overlay", {
