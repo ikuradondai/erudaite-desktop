@@ -959,7 +959,11 @@ function App() {
                 })) as string[];
                 const hasJpn = Array.isArray(langs) && langs.includes("jpn");
                 // #region agent log
-                dbg("P", "src/App.tsx:ocrSelectedListener", "tesseract langs", { count: Array.isArray(langs) ? langs.length : -1, hasJpn });
+                dbg("P", "src/App.tsx:ocrSelectedListener", "tesseract langs", {
+                  count: Array.isArray(langs) ? langs.length : -1,
+                  hasJpn,
+                  hasTessdataPrefix: Boolean((settings.tessdataPrefix ?? "").trim()),
+                });
                 // #endregion agent log
                 if (!hasJpn) {
                   pendingOcrImagePathRef.current = imagePath;
@@ -1194,6 +1198,7 @@ function App() {
     settings.ocrLang,
     settings.routingStrategy,
     settings.secondaryLanguage,
+    settings.tessdataPrefix,
     settings.tesseractPath,
   ]);
 
