@@ -422,6 +422,9 @@ function App() {
         } else {
           y = Math.max(my, Math.min(y, my + mh - initialH));
         }
+        // Ensure integer logical coords (avoid fractional positions under DPI).
+        x = Math.round(x);
+        y = Math.round(y);
         // #region agent log
         dbg("M", "src/App.tsx:ensurePopupAtCursor", "place popup (post-clamp)", { x, y });
         // #endregion agent log
@@ -429,6 +432,10 @@ function App() {
     } catch {
       // ignore clamp failures
     }
+
+    // If monitor lookup failed, still ensure integer coords.
+    x = Math.round(x);
+    y = Math.round(y);
 
     if (existing) {
       popupRef.current = existing;

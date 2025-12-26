@@ -406,6 +406,13 @@ pub async fn capture_screen_region(rect: CaptureRect) -> Result<String, String> 
     if rect.width == 0 || rect.height == 0 {
       return Err("invalid rect".to_string());
     }
+    // #region agent log
+    agent_log(
+      "O",
+      "capture_screen_region enter",
+      serde_json::json!({ "x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height }),
+    );
+    // #endregion agent log
 
     unsafe {
       let screen_dc: HDC = GetDC(0 as HWND);
@@ -450,6 +457,9 @@ pub async fn capture_screen_region(rect: CaptureRect) -> Result<String, String> 
         let _ = ReleaseDC(0 as HWND, screen_dc);
         return Err("BitBlt failed".to_string());
       }
+      // #region agent log
+      agent_log("O", "capture_screen_region bitblt ok", serde_json::json!({}));
+      // #endregion agent log
 
       // Prepare 32-bit BGRA DIB
       let mut bmi: BITMAPINFO = std::mem::zeroed();
@@ -517,6 +527,9 @@ pub async fn capture_screen_region(rect: CaptureRect) -> Result<String, String> 
         .write_image_data(&bgra)
         .map_err(|e| format!("png write failed: {e}"))?;
 
+      // #region agent log
+      agent_log("O", "capture_screen_region wrote png", serde_json::json!({ "path": out_path.to_string_lossy() }));
+      // #endregion agent log
       return Ok(out_path.to_string_lossy().to_string());
     }
   }
