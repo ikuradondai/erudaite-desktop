@@ -398,6 +398,18 @@ function App() {
           // NOTE: show() may focus on some platforms; we log to verify.
           await existing.show();
           if (settings.popupFocusOnOpen) await existing.setFocus();
+          // #region agent log
+          try {
+            const p = await existing.outerPosition();
+            const s = await existing.outerSize();
+            const sf = await existing.scaleFactor();
+            dbg("M", "src/App.tsx:ensurePopupAtCursor", "existing popup shown", { pos: p, size: s, scaleFactor: sf });
+          } catch (e) {
+            dbg("M", "src/App.tsx:ensurePopupAtCursor", "existing popup shown (pos/size read failed)", {
+              error: e instanceof Error ? e.message : String(e),
+            });
+          }
+          // #endregion agent log
           try {
             const vis2 = await existing.isVisible();
             if (!vis2) {
@@ -430,6 +442,13 @@ function App() {
     // Clamp to current monitor bounds (best effort)
     let x = Math.floor(cursor.x - initialW / 2);
     let y = Math.floor(cursor.y + offsetY);
+    // #region agent log
+    dbg("M", "src/App.tsx:ensurePopupAtCursor", "place popup (pre-clamp)", {
+      cursor,
+      initial: { w: initialW, h: initialH, offsetY },
+      proposed: { x, y },
+    });
+    // #endregion agent log
     try {
       const m = await monitorFromPoint(cursor.x, cursor.y);
       if (m) {
@@ -437,6 +456,13 @@ function App() {
         const my = m.position.y;
         const mw = m.size.width;
         const mh = m.size.height;
+        // #region agent log
+        dbg("M", "src/App.tsx:ensurePopupAtCursor", "monitorFromPoint", {
+          monitor: { position: m.position, size: m.size, scaleFactor: m.scaleFactor },
+          cursor,
+          cursorLogicalGuess: m.scaleFactor ? { x: cursor.x / m.scaleFactor, y: cursor.y / m.scaleFactor } : null,
+        });
+        // #endregion agent log
         x = Math.max(mx, Math.min(x, mx + mw - initialW));
         // If not enough space below cursor, show above
         if (y + initialH > my + mh) {
@@ -444,6 +470,9 @@ function App() {
         } else {
           y = Math.max(my, Math.min(y, my + mh - initialH));
         }
+        // #region agent log
+        dbg("M", "src/App.tsx:ensurePopupAtCursor", "place popup (post-clamp)", { x, y });
+        // #endregion agent log
       }
     } catch {
       // ignore clamp failures
@@ -486,6 +515,16 @@ function App() {
             // ignore
           }
         }
+        // #region agent log
+        try {
+          const p = await popup.outerPosition();
+          const s = await popup.outerSize();
+          const sf = await popup.scaleFactor();
+          dbg("M", "src/App.tsx:ensurePopupAtCursor", "popup created (actual)", { pos: p, size: s, scaleFactor: sf, requested: { x, y, w: initialW, h: initialH } });
+        } catch (e) {
+          dbg("M", "src/App.tsx:ensurePopupAtCursor", "popup created (pos/size read failed)", { error: e instanceof Error ? e.message : String(e) });
+        }
+        // #endregion agent log
       })();
       emitPopupState({}); // flush latest state after creation
     });
